@@ -83,23 +83,24 @@ def _render_submission_card(
     settings: AppSettings,
     col: st.delta_generator.DeltaGenerator,
 ) -> None:
-    blind = round.voting_open  # hide identifying info during voting
     with col:
         if round.mode == "match" and _target_path(round):
             _render_match_pair(round, sub)
         else:
             _render_submission_image(sub)
-        if not blind:
-            st.markdown(f"**{sub.team_name}**")
-        if sub.model_slug and not blind:
+        st.markdown(f"**{sub.team_name}**")
+        if sub.model_slug:
             model = find_model(settings.models_path, sub.model_slug)
             label = model.display_name if model else sub.model_slug
             st.caption(f"🧠 {label}")
-        if round.prompts_revealed and not blind:
+        if round.prompts_revealed:
             st.caption(sub.prompt)
         count = vote_counts.get(sub.id, 0)
-        if not round.voting_open and count > 0:
-            st.markdown(f"Votes: **{count}**")
+        if round.voting_open or count > 0:
+            label = f"Votes: **{count}**"
+            if round.voting_open:
+                label += " _(voting open)_"
+            st.markdown(label)
         if round.voting_open:
             _render_vote_button(sub, round, voter_name, settings)
 

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "imagen-4",
+    "slug": "google/imagen-4",
+    "display_name": "Google Imagen 4",
+    "description": "Strong general-purpose photorealism. Default for class.",
+    "sort_order": 10
+  },
+  {
+    "id": "nano-banana-2",
+    "slug": "google/nano-banana-2",
+    "display_name": "Google Nano Banana 2",
+    "description": "Smaller / faster Google model; good for quick iteration.",
+    "sort_order": 20
+  },
+  {
+    "id": "seedream-4",
+    "slug": "bytedance/seedream-4",
+    "display_name": "ByteDance Seedream 4",
+    "description": "Stylised generation with strong composition.",
+    "sort_order": 30
+  },
+  {
+    "id": "flux-1-1-pro",
+    "slug": "black-forest-labs/flux-1.1-pro",
+    "display_name": "FLUX 1.1 Pro",
+    "description": "High-fidelity FLUX variant; slower but sharp.",
+    "sort_order": 40
+  }
+]

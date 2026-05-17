@@ -5,7 +5,11 @@ logs/*
 
 data/*
 !data/.gitkeep
+!data/rounds.json
+!data/models.json
 data/app.db
+data/app.db-wal
+data/app.db-shm
 
 generated/*
 !generated/.gitkeep

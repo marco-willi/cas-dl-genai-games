@@ -8,24 +8,50 @@ echo "Running post-create setup..."
 # Install Claude Code CLI
 curl -fsSL https://claude.ai/install.sh | bash
 
+
+# Install Poetry
+curl -sSL https://install.python-poetry.org | python3 -
+export PATH="$HOME/.local/bin:$PATH"
+
 # Ensure we're in the workspace
 cd /workspace
 
-# Install project dependencies from pyproject.toml
-if [ -f "pyproject.toml" ]; then
-    echo "Installing dependencies from pyproject.toml..."
-    pip install -e ".[dev]"
-    echo "Dependencies installed"
-else
-    echo "Warning: pyproject.toml not found"
-fi
+# Place venv on native Linux filesystem for performance (avoids slow 9p scan by Quarto)
+poetry config virtualenvs.in-project false
+poetry config virtualenvs.path "$HOME/.venvs"
+
+poetry install --with dev
+
+# Resolve the actual venv path Poetry created and symlink it to /workspace/.venv
+VENV_REAL=$(poetry env info --path)
+# rm -rf /workspace/.venv
+# ln -s "$VENV_REAL" /workspace/.venv
+
+# Auto-activate the venv in every new terminal session
+VENV_ACTIVATE=$VENV_REAL/bin/activate
+
+for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$RC" ]; then
+        if ! grep -q "source $VENV_ACTIVATE" "$RC"; then
+            {
+                echo ""
+                echo "# Auto-activate Poetry venv"
+                echo "[ -f $VENV_ACTIVATE ] && source $VENV_ACTIVATE"
+            } >> "$RC"
+        fi
+    fi
+done
 
 # Install pre-commit hooks if .pre-commit-config.yaml exists
 if [ -f ".pre-commit-config.yaml" ]; then
     echo ""
     echo "Installing pre-commit hooks..."
-    pre-commit install || echo "Warning: Failed to install pre-commit hooks (continuing anyway)"
+    poetry run pre-commit install || echo "Warning: Failed to install pre-commit hooks (continuing anyway)"
 fi
+
+
 
 echo ""
 echo "Post-create setup complete!"
+echo "Venv : /workspace/.venv -> $VENV_REAL (native fs)"
+echo "Python: $($VENV_REAL --version)"

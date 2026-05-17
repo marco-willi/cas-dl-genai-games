@@ -1,9 +1,16 @@
 # Project specific
 logs/*
 !logs/.gitkeep
+.claude
 
 data/*
 !data/.gitkeep
+data/app.db
+
+generated/*
+!generated/.gitkeep
+
+.streamlit/secrets.toml
 
 
 # Byte-compiled / optimized / DLL files

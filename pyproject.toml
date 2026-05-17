@@ -1,33 +1,37 @@
+[tool.poetry]
+name = "genai-cv-game"
+version = "0.1.0"
+description = "Interactive generative AI classroom game for computer vision courses"
+authors = ["Marco Willi <marco.willi@protonmail.ch>"]
+packages = [{ include = "genai_cv_game", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.14"
+streamlit = "*"
+replicate = "*"
+python-dotenv = "*"
+pydantic = "^2"
+Pillow = "*"
+requests = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+mypy = "*"
+pre-commit = "*"
+ruff = "*"
+pytest-cov = "^7.1.0"
+
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src/genai_cv_game --cov-report=term-missing --cov-fail-under=80"
 
-[project]
-name = "my_project"
-version = "0.0.1"
-description = "My Project Description"
-authors = [{ name = "Marco Willi", email = "mwilli-dev@proton.me" }]
+[tool.coverage.report]
+omit = ["src/genai_cv_game/ui/*"]
 
-dependencies = [
-    # Data Manipulation and Analysis
-    "pandas",
-    "numpy",
-    # Visualization
-    "matplotlib",
-    "seaborn",
-    "Pillow",
-    # Logging and Experiment Tracking
-    "hydra-core",
-    # Jupyter and IPython
-    "jupyter",
-    "ipykernel",
-    # Utilities
-    "python-dotenv",
-    "pyrootutils",
-]
-
-[project.optional-dependencies]
-dev = ["pytest", "mypy", "pre-commit", "rich", "ruff"]
+[tool.mypy]
+mypy_path = "src"
+ignore_missing_imports = true

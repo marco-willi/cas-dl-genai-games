@@ -1,5 +1,5 @@
 {
-  "name": "Template - Minimal",
+  "name": "CAS - GenAI Games",
   "image": "mcr.microsoft.com/devcontainers/python:3.14",
   // Dev container features
   "features": {
@@ -18,8 +18,8 @@
   "customizations": {
     "vscode": {
       "settings": {
-        // Python settings
-        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        // Python settings — points to the Poetry venv inside the repo
+        "python.defaultInterpreterPath": "/workspace/.venv/bin/python",
         "python.terminal.activateEnvironment": true,
         "python.terminal.activateEnvInCurrentTerminal": true,
         // Jupyter settings

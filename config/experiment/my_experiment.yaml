@@ -1,6 +1,0 @@
-# Experiment Name
-id: experiment_id
-
-# Wandb settings
-wandb:
-  run_id: ${experiment.id}

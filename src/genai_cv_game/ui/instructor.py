@@ -7,7 +7,7 @@ import streamlit as st
 from genai_cv_game.config import AppSettings, ensure_directories
 from genai_cv_game.db import (
     delete_database,
-    delete_submission,
+    delete_team_submissions,
     get_active_round,
     get_all_rounds,
     get_submissions_for_round,
@@ -15,7 +15,7 @@ from genai_cv_game.db import (
     set_active_round,
     update_round_state,
 )
-from genai_cv_game.models import Round, Submission
+from genai_cv_game.models import Round
 from genai_cv_game.rounds import sync_rounds_from_json
 from genai_cv_game.storage import clear_generated_dir, export_submissions_csv
 
@@ -53,6 +53,8 @@ def _render_controls(settings: AppSettings) -> None:
         st.divider()
         _render_export(active, settings)
 
+    st.divider()
+    _render_models_info(settings)
     st.divider()
     _render_danger_zone(settings)
 
@@ -95,35 +97,67 @@ def _render_state_toggles(active: Round, settings: AppSettings) -> None:
 
 def _render_submission_counter(active: Round, settings: AppSettings) -> None:
     submissions = get_submissions_for_round(settings.db_path, active.id)
-    completed = sum(1 for s in submissions if s.status == "completed")
-    failed = sum(1 for s in submissions if s.status == "failed")
-    pending = sum(1 for s in submissions if s.status == "pending")
-    st.metric("Submissions", completed, help=f"{pending} pending · {failed} failed")
+    drafting_teams = _list_drafting_teams(active.id, settings)
+    st.metric(
+        "Submitted",
+        len(submissions),
+        help=f"{len(drafting_teams)} team(s) still drafting candidates",
+    )
+
+
+def _list_drafting_teams(round_id: str, settings: AppSettings) -> list[dict]:
+    """Return drafting-team summaries: name, draft counts, latest update.
+
+    Drafting teams are those with at least one draft (is_chosen=0) row and
+    no chosen row yet.
+    """
+    from genai_cv_game.db import get_connection
+
+    with get_connection(settings.db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT team_name,
+                   COUNT(*)                              AS total,
+                   SUM(status='pending')                 AS pending,
+                   SUM(status='completed')               AS completed,
+                   SUM(status='failed')                  AS failed,
+                   MAX(updated_at)                       AS last_update
+            FROM submissions
+            WHERE round_id=? AND is_chosen=0
+            GROUP BY LOWER(team_name)
+            ORDER BY last_update DESC
+            """,
+            (round_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def _render_pending_submissions(active: Round, settings: AppSettings) -> None:
-    pending = [
-        s
-        for s in get_submissions_for_round(settings.db_path, active.id)
-        if s.status == "pending"
-    ]
-    if not pending:
+    drafting = _list_drafting_teams(active.id, settings)
+    if not drafting:
         return
-    with st.expander(f"Pending submissions ({len(pending)})", expanded=False):
+    with st.expander(f"Teams still drafting ({len(drafting)})", expanded=False):
         st.caption(
-            "Submissions still generating. Clearing a row frees the team name "
-            "so the team can submit again."
+            "Teams generating candidates but not yet submitted. Clearing a "
+            "team's attempts frees their slot so they can start fresh."
         )
-        for sub in pending:
-            _render_pending_row(sub, settings)
+        for d in drafting:
+            _render_drafting_row(d, active, settings)
 
 
-def _render_pending_row(sub: Submission, settings: AppSettings) -> None:
-    col_name, col_age, col_action = st.columns([3, 2, 1])
-    col_name.markdown(f"**{sub.team_name}**")
-    col_age.caption(_relative_age(sub.updated_at))
-    if col_action.button("Clear", key=f"clear_pending_{sub.id}"):
-        delete_submission(settings.db_path, sub.id)
+def _render_drafting_row(team: dict, active: Round, settings: AppSettings) -> None:
+    col_name, col_status, col_action = st.columns([3, 3, 1])
+    col_name.markdown(f"**{team['team_name']}**")
+    parts = [f"{team['completed']} ready"]
+    if team["pending"]:
+        parts.append(f"{team['pending']} ⏳")
+    if team["failed"]:
+        parts.append(f"{team['failed']} ⚠️")
+    parts.append(_relative_age(team["last_update"]))
+    col_status.caption(" · ".join(parts))
+    safe_key = team["team_name"].replace(" ", "_").lower()
+    if col_action.button("Clear", key=f"clear_attempts_{active.id}_{safe_key}"):
+        delete_team_submissions(settings.db_path, active.id, team["team_name"])
         st.rerun()
 
 
@@ -165,6 +199,26 @@ def _render_export(active: Round, settings: AppSettings) -> None:
         file_name=f"{active.id}_submissions.csv",
         mime="text/csv",
     )
+
+
+def _render_models_info(settings: AppSettings) -> None:
+    st.subheader("Available Models")
+    from genai_cv_game.model_catalog import load_models
+
+    models = load_models(settings.models_path)
+    if not models:
+        st.caption(
+            "No models in the catalog. Edit `data/models.json` and restart "
+            "the app to populate it."
+        )
+        return
+    st.caption(
+        f"Edit `{settings.models_path}` (set `is_enabled: false`) and restart "
+        "to change what students may pick."
+    )
+    for m in models:
+        marker = "✅" if m.is_enabled else "🚫"
+        st.markdown(f"{marker} **{m.display_name}** — `{m.slug}`")
 
 
 _DB_WIPE_CONFIRM = "DELETE"

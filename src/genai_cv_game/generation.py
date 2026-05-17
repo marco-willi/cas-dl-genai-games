@@ -40,11 +40,15 @@ def start_generation(
     round_id: str,
     submission_id: str,
     settings: AppSettings,
+    model_slug: str | None = None,
 ) -> str:
     """Kick off an image generation. Returns a prediction id (or stub sentinel).
 
     Never blocks waiting for the result. Caller persists the returned id on the
     submission row and later passes it to `poll_generation`.
+
+    `model_slug` selects which Replicate model to use. If omitted, falls back
+    to `settings.default_replicate_model`. Stub mode ignores it.
     """
     if settings.use_stub_generation:
         _generate_stub(round_id, submission_id, settings)
@@ -52,12 +56,13 @@ def start_generation(
 
     if not settings.replicate_api_token:
         raise RuntimeError("Replicate API token is not configured.")
-    if not settings.default_replicate_model:
+    chosen_model = model_slug or settings.default_replicate_model
+    if not chosen_model:
         raise RuntimeError("No Replicate model is configured.")
 
     try:
         client = replicate.Client(api_token=settings.replicate_api_token)
-        version_id = _resolve_version(client, settings.default_replicate_model)
+        version_id = _resolve_version(client, chosen_model)
         prediction = client.predictions.create(
             version=version_id, input={"prompt": prompt}
         )

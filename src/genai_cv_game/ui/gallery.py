@@ -11,9 +11,8 @@ from genai_cv_game.db import (
     get_active_round,
     get_submissions_for_round,
     get_vote_counts,
-    update_submission_status,
 )
-from genai_cv_game.generation import poll_generation
+from genai_cv_game.model_catalog import find_model
 from genai_cv_game.models import Round, Submission
 
 # Gallery is wrapped in an st.fragment so the 5s auto-refresh only reruns this
@@ -39,13 +38,8 @@ def render_gallery(settings: AppSettings) -> None:
         return
 
     submissions = get_submissions_for_round(settings.db_path, active.id)
-    _drain_pending(submissions, settings)
-    submissions = get_submissions_for_round(settings.db_path, active.id)
     completed = [s for s in submissions if s.status == "completed"]
     failed = [s for s in submissions if s.status == "failed"]
-
-    if active.mode == "match":
-        _render_target_image(active)
 
     voter_name = _render_voter_input(active) if active.voting_open else ""
 
@@ -59,25 +53,6 @@ def render_gallery(settings: AppSettings) -> None:
         _render_failed_submissions(failed)
 
 
-def _drain_pending(submissions: list[Submission], settings: AppSettings) -> None:
-    """Poll every pending submission so the gallery reflects the latest state."""
-    for sub in submissions:
-        if sub.status != "pending" or not sub.prediction_id:
-            continue
-        result = poll_generation(sub.prediction_id, sub.round_id, sub.id, settings)
-        if result.status == "succeeded" and result.image_path:
-            update_submission_status(
-                settings.db_path, sub.id, "completed", image_path=result.image_path
-            )
-        elif result.status == "failed":
-            update_submission_status(
-                settings.db_path,
-                sub.id,
-                "failed",
-                error_message=result.error or "Generation failed.",
-            )
-
-
 def _render_voter_input(round: Round) -> str:
     name = st.text_input(
         "Your name (to vote)",
@@ -87,13 +62,6 @@ def _render_voter_input(round: Round) -> str:
     return name.strip()
 
 
-def _render_target_image(round: Round) -> None:
-    if round.target_image_path:
-        path = Path(round.target_image_path)
-        if path.exists():
-            st.image(str(path), caption="Target image", width=400)
-
-
 def _render_submission_grid(
     submissions: list[Submission],
     round: Round,
@@ -101,10 +69,13 @@ def _render_submission_grid(
     voter_name: str,
     settings: AppSettings,
 ) -> None:
-    cols = st.columns(3)
+    # Match mode gets a 2-col grid so each card has room for target + submission
+    # side by side. Business mode keeps the denser 3-col layout.
+    grid_width = 2 if round.mode == "match" else 3
+    cols = st.columns(grid_width)
     for i, sub in enumerate(submissions):
         _render_submission_card(
-            sub, round, vote_counts, voter_name, settings, cols[i % 3]
+            sub, round, vote_counts, voter_name, settings, cols[i % grid_width]
         )
 
 
@@ -117,11 +88,15 @@ def _render_submission_card(
     col: st.delta_generator.DeltaGenerator,
 ) -> None:
     with col:
-        if sub.image_path and Path(sub.image_path).exists():
-            st.image(sub.image_path, use_container_width=True)
+        if round.mode == "match" and _target_path(round):
+            _render_match_pair(round, sub)
         else:
-            st.markdown("_(image unavailable)_")
+            _render_submission_image(sub)
         st.markdown(f"**{sub.team_name}**")
+        if sub.model_slug:
+            model = find_model(settings.models_path, sub.model_slug)
+            label = model.display_name if model else sub.model_slug
+            st.caption(f"🧠 {label}")
         if round.prompts_revealed:
             st.caption(sub.prompt)
         count = vote_counts.get(sub.id, 0)
@@ -132,6 +107,32 @@ def _render_submission_card(
             st.markdown(label)
         if round.voting_open:
             _render_vote_button(sub, round, voter_name, settings)
+
+
+def _target_path(round: Round) -> Path | None:
+    if not round.target_image_path:
+        return None
+    p = Path(round.target_image_path)
+    return p if p.exists() else None
+
+
+def _render_match_pair(round: Round, sub: Submission) -> None:
+    target = _target_path(round)
+    target_col, sub_col = st.columns(2)
+    with target_col:
+        st.image(str(target), caption="Target", use_container_width=True)
+    with sub_col:
+        if sub.image_path and Path(sub.image_path).exists():
+            st.image(sub.image_path, caption="Submission", use_container_width=True)
+        else:
+            st.markdown("_(submission image unavailable)_")
+
+
+def _render_submission_image(sub: Submission) -> None:
+    if sub.image_path and Path(sub.image_path).exists():
+        st.image(sub.image_path, use_container_width=True)
+    else:
+        st.markdown("_(image unavailable)_")
 
 
 def _render_vote_button(

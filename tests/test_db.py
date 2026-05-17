@@ -3,13 +3,14 @@ import sqlite3
 import pytest
 
 from genai_cv_game.db import (
-    DuplicateSubmissionError,
+    choose_submission,
     create_submission,
     create_vote,
     delete_submission,
     get_active_round,
     get_all_rounds,
     get_submissions_for_round,
+    get_team_submissions,
     get_vote_counts,
     init_db,
     insert_or_update_round,
@@ -34,9 +35,8 @@ def _round(id="r1", mode="business", **kwargs) -> Round:
 def test_init_creates_tables(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
-    import sqlite3 as _sq
 
-    conn = _sq.connect(db)
+    conn = sqlite3.connect(db)
     tables = {
         r[0]
         for r in conn.execute(
@@ -44,6 +44,7 @@ def test_init_creates_tables(tmp_path):
         ).fetchall()
     }
     assert {"rounds", "submissions", "votes"} <= tables
+    assert "attempts" not in tables
     assert conn.execute("SELECT COUNT(*) FROM rounds").fetchone()[0] == 0
 
 
@@ -65,7 +66,6 @@ def test_upsert_round_preserves_state(tmp_path):
     set_active_round(db, "r1")
     update_round_state(db, "r1", submissions_open=True)
 
-    # re-upsert with changed title
     insert_or_update_round(
         db, Round(id="r1", title="New Title", description="desc", mode="business")
     )
@@ -110,37 +110,39 @@ def test_update_round_state_rejects_unknown_key(tmp_path):
         update_round_state(db, "r1", nonexistent_flag=True)
 
 
-def test_create_and_get_submission(tmp_path):
+def test_create_and_get_draft(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
     insert_or_update_round(db, _round("r1"))
-    sub_id = create_submission(db, "r1", "Team A", "a red car")
-    subs = get_submissions_for_round(db, "r1")
-    assert len(subs) == 1
-    assert subs[0].id == sub_id
-    assert subs[0].status == "pending"
-    assert subs[0].team_name == "Team A"
-    assert subs[0].image_path is None
+    sub_id = create_submission(db, "r1", "Team A", "a red car", max_attempts=3)
+    drafts = get_team_submissions(db, "r1", "Team A")
+    assert len(drafts) == 1
+    assert drafts[0].id == sub_id
+    assert drafts[0].status == "pending"
+    assert drafts[0].team_name == "Team A"
+    assert drafts[0].image_path is None
+    assert drafts[0].is_chosen is False
 
 
 def test_update_submission_status(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
     insert_or_update_round(db, _round("r1"))
-    sub_id = create_submission(db, "r1", "Team B", "blue sky")
+    sub_id = create_submission(db, "r1", "Team B", "blue sky", max_attempts=3)
     update_submission_status(db, sub_id, "completed", image_path="generated/r1/img.png")
-    subs = get_submissions_for_round(db, "r1")
-    assert subs[0].status == "completed"
-    assert subs[0].image_path == "generated/r1/img.png"
-    assert subs[0].error_message is None
+    drafts = get_team_submissions(db, "r1", "Team B")
+    assert drafts[0].status == "completed"
+    assert drafts[0].image_path == "generated/r1/img.png"
+    assert drafts[0].error_message is None
 
 
 def test_reset_round_submissions(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
     insert_or_update_round(db, _round("r1"))
-    sub_id = create_submission(db, "r1", "Team C", "forest")
+    sub_id = create_submission(db, "r1", "Team C", "forest", max_attempts=3)
     update_submission_status(db, sub_id, "completed", image_path="x.png")
+    choose_submission(db, sub_id)
     create_vote(db, "r1", sub_id, "voter1")
 
     reset_round_submissions(db, "r1")
@@ -152,37 +154,10 @@ def test_vote_uniqueness(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
     insert_or_update_round(db, _round("r1"))
-    sub_id = create_submission(db, "r1", "Team D", "night sky")
+    sub_id = create_submission(db, "r1", "Team D", "night sky", max_attempts=3)
     create_vote(db, "r1", sub_id, "voter1")
     with pytest.raises(sqlite3.IntegrityError):
         create_vote(db, "r1", sub_id, "voter1")
-
-
-def test_duplicate_submission_same_round_blocked(tmp_path):
-    db = tmp_path / "app.db"
-    init_db(db)
-    insert_or_update_round(db, _round("r1"))
-    create_submission(db, "r1", "Team A", "first")
-    with pytest.raises(DuplicateSubmissionError):
-        create_submission(db, "r1", "Team A", "second")
-
-
-def test_duplicate_submission_case_insensitive(tmp_path):
-    db = tmp_path / "app.db"
-    init_db(db)
-    insert_or_update_round(db, _round("r1"))
-    create_submission(db, "r1", "Team A", "first")
-    with pytest.raises(DuplicateSubmissionError):
-        create_submission(db, "r1", "team a", "second")
-
-
-def test_duplicate_submission_strips_whitespace(tmp_path):
-    db = tmp_path / "app.db"
-    init_db(db)
-    insert_or_update_round(db, _round("r1"))
-    create_submission(db, "r1", "Team A", "first")
-    with pytest.raises(DuplicateSubmissionError):
-        create_submission(db, "r1", "  Team A  ", "second")
 
 
 def test_create_submission_rejects_empty_team_name(tmp_path):
@@ -190,7 +165,7 @@ def test_create_submission_rejects_empty_team_name(tmp_path):
     init_db(db)
     insert_or_update_round(db, _round("r1"))
     with pytest.raises(ValueError):
-        create_submission(db, "r1", "   ", "prompt")
+        create_submission(db, "r1", "   ", "prompt", max_attempts=3)
 
 
 def test_same_team_can_submit_in_different_rounds(tmp_path):
@@ -198,8 +173,8 @@ def test_same_team_can_submit_in_different_rounds(tmp_path):
     init_db(db)
     insert_or_update_round(db, _round("r1"))
     insert_or_update_round(db, _round("r2"))
-    create_submission(db, "r1", "Team A", "first")
-    sub2 = create_submission(db, "r2", "Team A", "second")
+    create_submission(db, "r1", "Team A", "first", max_attempts=3)
+    sub2 = create_submission(db, "r2", "Team A", "second", max_attempts=3)
     assert sub2 is not None
 
 
@@ -207,8 +182,9 @@ def test_delete_submission_clears_row_and_votes(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
     insert_or_update_round(db, _round("r1"))
-    sub_id = create_submission(db, "r1", "Team X", "p")
+    sub_id = create_submission(db, "r1", "Team X", "p", max_attempts=3)
     update_submission_status(db, sub_id, "completed", image_path="x.png")
+    choose_submission(db, sub_id)
     create_vote(db, "r1", sub_id, "voter1")
     delete_submission(db, sub_id)
     assert get_submissions_for_round(db, "r1") == []
@@ -239,7 +215,7 @@ def test_update_submission_status_rejects_invalid_status(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
     insert_or_update_round(db, _round("r1"))
-    sub_id = create_submission(db, "r1", "Team A", "p")
+    sub_id = create_submission(db, "r1", "Team A", "p", max_attempts=3)
     with pytest.raises(ValueError, match="Invalid status"):
         update_submission_status(db, sub_id, "in_progress")
 
@@ -256,7 +232,7 @@ def test_vote_normalization_blocks_casing_dupes(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
     insert_or_update_round(db, _round("r1"))
-    sub_id = create_submission(db, "r1", "Team A", "p")
+    sub_id = create_submission(db, "r1", "Team A", "p", max_attempts=3)
     create_vote(db, "r1", sub_id, "Alice")
     with pytest.raises(sqlite3.IntegrityError):
         create_vote(db, "r1", sub_id, "alice")
@@ -268,8 +244,8 @@ def test_get_vote_counts(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
     insert_or_update_round(db, _round("r1"))
-    s1 = create_submission(db, "r1", "Team E", "prompt1")
-    s2 = create_submission(db, "r1", "Team F", "prompt2")
+    s1 = create_submission(db, "r1", "Team E", "prompt1", max_attempts=3)
+    s2 = create_submission(db, "r1", "Team F", "prompt2", max_attempts=3)
     create_vote(db, "r1", s1, "voter1")
     create_vote(db, "r1", s1, "voter2")
     create_vote(db, "r1", s2, "voter3")

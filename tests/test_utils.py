@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from genai_cv_game.utils import new_id, now_utc, slugify
+from genai_cv_game.utils import new_id, now_utc
 
 
 def test_new_id_is_unique():
@@ -13,7 +13,3 @@ def test_new_id_is_string():
 
 def test_now_utc_is_iso_string():
     datetime.fromisoformat(now_utc())
-
-
-def test_slugify():
-    assert slugify("Hello World") == "hello_world"

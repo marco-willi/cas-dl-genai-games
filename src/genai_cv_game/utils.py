@@ -8,7 +8,3 @@ def now_utc() -> str:
 
 def new_id() -> str:
     return str(uuid.uuid4())
-
-
-def slugify(text: str) -> str:
-    return text.lower().replace(" ", "_")

@@ -7,6 +7,7 @@ import requests
 
 from genai_cv_game.config import AppSettings
 from genai_cv_game.db import (
+    choose_submission,
     create_submission,
     init_db,
     insert_or_update_round,
@@ -72,9 +73,12 @@ def test_export_submissions_csv(tmp_path):
     insert_or_update_round(
         db, Round(id="r1", title="T", description="d", mode="business")
     )
-    s1 = create_submission(db, "r1", "Team A", "blue car")
-    create_submission(db, "r1", "Team B", "red sky")
+    s1 = create_submission(db, "r1", "Team A", "blue car", max_attempts=3)
+    s2 = create_submission(db, "r1", "Team B", "red sky", max_attempts=3)
     update_submission_status(db, s1, "completed", image_path="generated/r1/s1.png")
+    update_submission_status(db, s2, "completed", image_path="generated/r1/s2.png")
+    choose_submission(db, s1)
+    choose_submission(db, s2)
 
     data = export_submissions_csv(db, "r1", round_title="My Round")
     text = data.decode()
@@ -101,6 +105,7 @@ def _settings(tmp_path, *, stub=True, token=None, model=None) -> AppSettings:
         default_replicate_model=model,
         db_path=tmp_path / "app.db",
         rounds_path=tmp_path / "rounds.json",
+        models_path=tmp_path / "models.json",
         generated_dir=tmp_path / "generated",
         assets_dir=tmp_path / "assets",
         use_stub_generation=stub,

@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from genai_cv_game.models import Round, Submission, Vote
+from genai_cv_game.models import Round, Submission
 from genai_cv_game.utils import new_id, now_utc
 
 _ALLOWED_ROUND_STATE_KEYS = frozenset(
@@ -32,15 +32,6 @@ def get_connection(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
 
 def init_db(db_path: Path) -> None:
     create_tables(db_path)
-    _migrate_schema(db_path)
-
-
-def _migrate_schema(db_path: Path) -> None:
-    """Idempotent additive migrations for DBs created by older versions."""
-    with get_connection(db_path) as conn:
-        cols = {r["name"] for r in conn.execute("PRAGMA table_info(submissions)")}
-        if "prediction_id" not in cols:
-            conn.execute("ALTER TABLE submissions ADD COLUMN prediction_id TEXT")
 
 
 def create_tables(db_path: Path) -> None:
@@ -70,6 +61,8 @@ def create_tables(db_path: Path) -> None:
                 status        TEXT NOT NULL,
                 error_message TEXT,
                 prediction_id TEXT,
+                model_slug    TEXT,
+                is_chosen     INTEGER NOT NULL DEFAULT 0,
                 created_at    TEXT NOT NULL,
                 updated_at    TEXT NOT NULL
             );
@@ -83,8 +76,10 @@ def create_tables(db_path: Path) -> None:
                 UNIQUE (round_id, voter_name)
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_submissions_round_team
+            CREATE INDEX IF NOT EXISTS idx_submissions_round_team
                 ON submissions (round_id, LOWER(team_name));
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_submissions_chosen_round_team
+                ON submissions (round_id, LOWER(team_name)) WHERE is_chosen=1;
         """)
 
 
@@ -153,28 +148,61 @@ def update_round_state(db_path: Path, round_id: str, **kwargs) -> None:
 
 
 class DuplicateSubmissionError(Exception):
-    """A submission for (round_id, team_name) already exists."""
+    """The team has already chosen a submission for this round."""
 
 
-def create_submission(db_path: Path, round_id: str, team_name: str, prompt: str) -> str:
-    sub_id = new_id()
-    ts = now_utc()
+class MaxAttemptsReachedError(Exception):
+    """A team has used all of its generation attempts for this round."""
+
+
+def create_submission(
+    db_path: Path,
+    round_id: str,
+    team_name: str,
+    prompt: str,
+    max_attempts: int,
+    model_slug: str | None = None,
+) -> str:
+    """Create a new draft submission (pending, is_chosen=0).
+
+    Raises:
+        ValueError: team_name is blank or max_attempts < 1.
+        DuplicateSubmissionError: team already has a chosen submission.
+        MaxAttemptsReachedError: team already has max_attempts rows.
+    """
     normalized = team_name.strip()
     if not normalized:
         raise ValueError("team_name must not be empty")
-    try:
-        with get_connection(db_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO submissions (id, round_id, team_name, prompt, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'pending', ?, ?)
-                """,
-                (sub_id, round_id, normalized, prompt, ts, ts),
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be >= 1")
+    sub_id = new_id()
+    ts = now_utc()
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS total, COALESCE(SUM(is_chosen), 0) AS chosen
+            FROM submissions
+            WHERE round_id=? AND LOWER(team_name)=LOWER(?)
+            """,
+            (round_id, normalized),
+        ).fetchone()
+        if row["chosen"]:
+            raise DuplicateSubmissionError(
+                f"Team '{normalized}' has already submitted to this round."
             )
-    except sqlite3.IntegrityError as e:
-        raise DuplicateSubmissionError(
-            f"Team '{normalized}' already has a submission for this round."
-        ) from e
+        if row["total"] >= max_attempts:
+            raise MaxAttemptsReachedError(
+                f"Team '{normalized}' has reached the limit of {max_attempts} attempts."
+            )
+        conn.execute(
+            """
+            INSERT INTO submissions
+                (id, round_id, team_name, prompt, status, model_slug,
+                 is_chosen, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'pending', ?, 0, ?, ?)
+            """,
+            (sub_id, round_id, normalized, prompt, model_slug, ts, ts),
+        )
     return sub_id
 
 
@@ -213,11 +241,74 @@ def update_submission_status(
         )
 
 
+def choose_submission(db_path: Path, submission_id: str) -> None:
+    """Mark a completed draft as the team's final submission for the round.
+
+    Deletes the team's other draft rows so the chosen one is the only entry
+    that survives. Raises ValueError if the row is missing or not completed,
+    DuplicateSubmissionError if the team has already chosen another row.
+    """
+    ts = now_utc()
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT round_id, team_name, status FROM submissions WHERE id=?",
+            (submission_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError(f"Unknown submission id: {submission_id!r}")
+        if row["status"] != "completed":
+            raise ValueError(
+                f"Submission {submission_id!r} has status {row['status']!r}; "
+                "only completed submissions can be chosen."
+            )
+        already_chosen = conn.execute(
+            """
+            SELECT 1 FROM submissions
+            WHERE round_id=? AND LOWER(team_name)=LOWER(?)
+              AND is_chosen=1 AND id <> ?
+            """,
+            (row["round_id"], row["team_name"], submission_id),
+        ).fetchone()
+        if already_chosen:
+            raise DuplicateSubmissionError(
+                f"Team '{row['team_name']}' has already submitted to this round."
+            )
+        conn.execute(
+            """
+            DELETE FROM submissions
+            WHERE round_id=? AND LOWER(team_name)=LOWER(?) AND id <> ?
+            """,
+            (row["round_id"], row["team_name"], submission_id),
+        )
+        conn.execute(
+            "UPDATE submissions SET is_chosen=1, updated_at=? WHERE id=?",
+            (ts, submission_id),
+        )
+
+
 def get_submissions_for_round(db_path: Path, round_id: str) -> list[Submission]:
+    """Return chosen submissions for the round — the gallery / CSV view."""
     with get_connection(db_path) as conn:
         rows = conn.execute(
-            "SELECT * FROM submissions WHERE round_id=? ORDER BY created_at",
+            "SELECT * FROM submissions WHERE round_id=? AND is_chosen=1 ORDER BY created_at",
             (round_id,),
+        ).fetchall()
+    return [_row_to_submission(r) for r in rows]
+
+
+def get_team_submissions(
+    db_path: Path, round_id: str, team_name: str
+) -> list[Submission]:
+    """Return all rows (drafts + chosen) for a single team in a round."""
+    needle = team_name.strip()
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM submissions
+            WHERE round_id=? AND LOWER(team_name)=LOWER(?)
+            ORDER BY created_at
+            """,
+            (round_id, needle),
         ).fetchall()
     return [_row_to_submission(r) for r in rows]
 
@@ -225,6 +316,14 @@ def get_submissions_for_round(db_path: Path, round_id: str) -> list[Submission]:
 def delete_submission(db_path: Path, submission_id: str) -> None:
     with get_connection(db_path) as conn:
         conn.execute("DELETE FROM submissions WHERE id=?", (submission_id,))
+
+
+def delete_team_submissions(db_path: Path, round_id: str, team_name: str) -> None:
+    with get_connection(db_path) as conn:
+        conn.execute(
+            "DELETE FROM submissions WHERE round_id=? AND LOWER(team_name)=LOWER(?)",
+            (round_id, team_name.strip()),
+        )
 
 
 def reset_round_submissions(db_path: Path, round_id: str) -> None:
@@ -306,7 +405,6 @@ def _row_to_round(row: sqlite3.Row) -> Round:
 
 
 def _row_to_submission(row: sqlite3.Row) -> Submission:
-    keys = row.keys()
     return Submission(
         id=row["id"],
         round_id=row["round_id"],
@@ -315,17 +413,9 @@ def _row_to_submission(row: sqlite3.Row) -> Submission:
         image_path=row["image_path"],
         status=row["status"],
         error_message=row["error_message"],
-        prediction_id=row["prediction_id"] if "prediction_id" in keys else None,
+        prediction_id=row["prediction_id"],
+        model_slug=row["model_slug"],
+        is_chosen=bool(row["is_chosen"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
-    )
-
-
-def _row_to_vote(row: sqlite3.Row) -> Vote:
-    return Vote(
-        id=row["id"],
-        round_id=row["round_id"],
-        submission_id=row["submission_id"],
-        voter_name=row["voter_name"],
-        created_at=row["created_at"],
     )

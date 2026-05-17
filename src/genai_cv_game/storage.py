@@ -52,6 +52,7 @@ def export_submissions_csv(
         "round_title",
         "team_name",
         "prompt",
+        "model_slug",
         "image_path",
         "status",
         "error_message",

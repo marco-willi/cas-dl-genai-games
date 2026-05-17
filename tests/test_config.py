@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pydantic
+import pytest
 
 from genai_cv_game.config import AppSettings, ensure_directories, load_settings
 
@@ -47,6 +49,28 @@ def test_stub_flag_true(monkeypatch):
         assert load_settings().use_stub_generation is True
 
 
+def test_max_attempts_default(monkeypatch):
+    monkeypatch.delenv("MAX_ATTEMPTS", raising=False)
+    assert load_settings().max_attempts == 3
+
+
+def test_max_attempts_override(monkeypatch):
+    monkeypatch.setenv("MAX_ATTEMPTS", "5")
+    assert load_settings().max_attempts == 5
+
+
+def test_max_attempts_validation(monkeypatch):
+    monkeypatch.setenv("MAX_ATTEMPTS", "0")
+    with pytest.raises(pydantic.ValidationError):
+        load_settings()
+
+
+def test_max_attempts_malformed(monkeypatch):
+    monkeypatch.setenv("MAX_ATTEMPTS", "banana")
+    with pytest.raises(pydantic.ValidationError):
+        load_settings()
+
+
 def test_ensure_directories_creates_paths(tmp_path, monkeypatch):
     monkeypatch.delenv("REPLICATE_API_TOKEN", raising=False)
 
@@ -57,6 +81,7 @@ def test_ensure_directories_creates_paths(tmp_path, monkeypatch):
         default_replicate_model=None,
         db_path=tmp_path / "data" / "app.db",
         rounds_path=tmp_path / "data" / "rounds.json",
+        models_path=tmp_path / "data" / "models.json",
         generated_dir=tmp_path / "generated",
         assets_dir=tmp_path / "assets",
         use_stub_generation=False,

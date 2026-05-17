@@ -182,6 +182,7 @@ def test_start_generation_uses_provided_model_slug(tmp_path, monkeypatch):
     s = AppSettings(
         app_title="T",
         replicate_api_token="tok",
+        app_passcode="x",
         instructor_passcode="x",
         default_replicate_model="default/model",
         db_path=tmp_path / "app.db",
@@ -221,6 +222,7 @@ def test_start_generation_falls_back_to_default_model_when_slug_missing(
     s = AppSettings(
         app_title="T",
         replicate_api_token="tok",
+        app_passcode="x",
         instructor_passcode="x",
         default_replicate_model="default/model",
         db_path=tmp_path / "app.db",
@@ -241,6 +243,7 @@ def test_start_generation_errors_when_no_model_anywhere(tmp_path):
     s = AppSettings(
         app_title="T",
         replicate_api_token="tok",
+        app_passcode="x",
         instructor_passcode="x",
         default_replicate_model=None,
         db_path=tmp_path / "app.db",

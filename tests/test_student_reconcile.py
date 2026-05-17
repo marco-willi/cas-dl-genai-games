@@ -25,6 +25,7 @@ def _settings(tmp_path: Path) -> AppSettings:
     return AppSettings(
         app_title="Test",
         replicate_api_token=None,
+        app_passcode="x",
         instructor_passcode="x",
         default_replicate_model=None,
         db_path=tmp_path / "app.db",

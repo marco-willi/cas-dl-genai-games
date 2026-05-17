@@ -12,6 +12,7 @@ load_dotenv()
 class AppSettings(BaseModel):
     app_title: str
     replicate_api_token: str | None
+    app_passcode: str
     instructor_passcode: str
     default_replicate_model: str | None
     db_path: Path
@@ -27,6 +28,7 @@ def load_settings() -> AppSettings:
     raw: dict[str, object] = {
         "app_title": os.getenv("APP_TITLE", "Generative AI CV Classroom Game"),
         "replicate_api_token": os.getenv("REPLICATE_API_TOKEN") or None,
+        "app_passcode": os.getenv("APP_PASSCODE", "changeme"),
         "instructor_passcode": os.getenv("INSTRUCTOR_PASSCODE", "changeme"),
         "default_replicate_model": os.getenv("DEFAULT_REPLICATE_MODEL") or None,
         "db_path": Path(os.getenv("DB_PATH", "data/app.db")),

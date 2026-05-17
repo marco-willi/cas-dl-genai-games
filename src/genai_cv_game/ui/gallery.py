@@ -41,25 +41,21 @@ def render_gallery(settings: AppSettings) -> None:
     completed = [s for s in submissions if s.status == "completed"]
     failed = [s for s in submissions if s.status == "failed"]
 
-    voter_name = _render_voter_input(active) if active.voting_open else ""
+    voter_name = st.session_state.get("user_name", "")
+    vote_counts = get_vote_counts(settings.db_path, active.id)
+
+    # Voting has been closed AND at least one vote was cast → show results.
+    if not active.voting_open and vote_counts:
+        _render_results(vote_counts, completed)
+        st.divider()
 
     if not completed:
         st.write("No submissions yet.")
     else:
-        vote_counts = get_vote_counts(settings.db_path, active.id)
         _render_submission_grid(completed, active, vote_counts, voter_name, settings)
 
     if failed:
         _render_failed_submissions(failed)
-
-
-def _render_voter_input(round: Round) -> str:
-    name = st.text_input(
-        "Your name (to vote)",
-        key=f"voter_name_{round.id}",
-        help="Used once per round to record your vote.",
-    )
-    return name.strip()
 
 
 def _render_submission_grid(
@@ -87,24 +83,23 @@ def _render_submission_card(
     settings: AppSettings,
     col: st.delta_generator.DeltaGenerator,
 ) -> None:
+    blind = round.voting_open  # hide identifying info during voting
     with col:
         if round.mode == "match" and _target_path(round):
             _render_match_pair(round, sub)
         else:
             _render_submission_image(sub)
-        st.markdown(f"**{sub.team_name}**")
-        if sub.model_slug:
+        if not blind:
+            st.markdown(f"**{sub.team_name}**")
+        if sub.model_slug and not blind:
             model = find_model(settings.models_path, sub.model_slug)
             label = model.display_name if model else sub.model_slug
             st.caption(f"🧠 {label}")
-        if round.prompts_revealed:
+        if round.prompts_revealed and not blind:
             st.caption(sub.prompt)
         count = vote_counts.get(sub.id, 0)
-        if round.voting_open or count > 0:
-            label = f"Votes: **{count}**"
-            if round.voting_open:
-                label += " _(voting open)_"
-            st.markdown(label)
+        if not round.voting_open and count > 0:
+            st.markdown(f"Votes: **{count}**")
         if round.voting_open:
             _render_vote_button(sub, round, voter_name, settings)
 
@@ -120,17 +115,17 @@ def _render_match_pair(round: Round, sub: Submission) -> None:
     target = _target_path(round)
     target_col, sub_col = st.columns(2)
     with target_col:
-        st.image(str(target), caption="Target", use_container_width=True)
+        st.image(str(target), caption="Target", width="stretch")
     with sub_col:
         if sub.image_path and Path(sub.image_path).exists():
-            st.image(sub.image_path, caption="Submission", use_container_width=True)
+            st.image(sub.image_path, caption="Submission", width="stretch")
         else:
             st.markdown("_(submission image unavailable)_")
 
 
 def _render_submission_image(sub: Submission) -> None:
     if sub.image_path and Path(sub.image_path).exists():
-        st.image(sub.image_path, use_container_width=True)
+        st.image(sub.image_path, width="stretch")
     else:
         st.markdown("_(image unavailable)_")
 
@@ -143,13 +138,55 @@ def _render_vote_button(
         "Vote",
         key=f"vote_{sub.id}",
         disabled=disabled,
-        help="Enter your name above to enable voting." if disabled else None,
+        help="Sign in to enable voting." if disabled else None,
     ):
         try:
             create_vote(settings.db_path, round.id, sub.id, voter_name)
             st.success("Vote recorded!")
         except sqlite3.IntegrityError:
             st.warning("You have already voted in this round.")
+
+
+def _render_results(vote_counts: dict[str, int], submissions: list[Submission]) -> None:
+    """Show the winner + a horizontal bar of per-team vote counts.
+
+    Called only when voting is closed AND at least one vote exists.
+    Ties are reported by listing every top-scoring team.
+    """
+    rows = compute_results(vote_counts, submissions)
+    if not rows:
+        return
+
+    top_votes = rows[0][1]
+    winners = [name for name, n in rows if n == top_votes and n > 0]
+
+    st.subheader("🏆 Voting results")
+    if not winners:
+        st.info("No votes cast.")
+    elif len(winners) == 1:
+        st.success(f"Winner: **{winners[0]}** with {top_votes} vote(s)")
+    else:
+        winner_md = ", ".join(f"**{w}**" for w in winners)
+        st.success(f"Tie: {winner_md} — {top_votes} vote(s) each")
+
+    for name, n in rows:
+        col_name, col_bar = st.columns([2, 5])
+        col_name.markdown(f"**{name}**")
+        ratio = n / top_votes if top_votes else 0.0
+        col_bar.progress(ratio, text=f"{n}")
+
+
+def compute_results(
+    vote_counts: dict[str, int], submissions: list[Submission]
+) -> list[tuple[str, int]]:
+    """Map submission_id→count pairs into (team_name, count) sorted descending.
+
+    Pure helper, separated from the renderer so it can be unit-tested.
+    """
+    by_id = {s.id: s.team_name for s in submissions}
+    rows = [(by_id.get(sid, sid), n) for sid, n in vote_counts.items()]
+    rows.sort(key=lambda r: (-r[1], r[0]))
+    return rows
 
 
 def _render_failed_submissions(failed: list[Submission]) -> None:

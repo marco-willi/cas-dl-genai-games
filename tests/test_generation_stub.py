@@ -101,6 +101,7 @@ def _settings(tmp_path, *, stub=True, token=None, model=None) -> AppSettings:
     return AppSettings(
         app_title="Test",
         replicate_api_token=token,
+        app_passcode="x",
         instructor_passcode="x",
         default_replicate_model=model,
         db_path=tmp_path / "app.db",

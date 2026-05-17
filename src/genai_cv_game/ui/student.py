@@ -71,10 +71,7 @@ def _render_target_image(round: Round) -> None:
 
 
 def _render_team_workspace(round: Round, settings: AppSettings) -> None:
-    team_name = st.text_input("Team name", key="team_name").strip()
-    if not team_name:
-        st.caption("Enter your team name to start generating.")
-        return
+    team_name = st.session_state["user_name"]
 
     team_rows = get_team_submissions(settings.db_path, round.id, team_name)
     chosen = next((s for s in team_rows if s.is_chosen), None)
@@ -124,7 +121,7 @@ def _render_drafts_grid(
 
 def _render_draft_card(draft: Submission, settings: AppSettings, locked: bool) -> None:
     if draft.status == "completed" and draft.image_path:
-        st.image(draft.image_path, use_container_width=True)
+        st.image(draft.image_path, width="stretch")
     elif draft.status == "pending":
         st.markdown("⏳ _generating…_")
     else:  # failed

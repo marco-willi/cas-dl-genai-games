@@ -10,6 +10,7 @@ def test_defaults_without_env(monkeypatch):
     for var in [
         "APP_TITLE",
         "REPLICATE_API_TOKEN",
+        "APP_PASSCODE",
         "INSTRUCTOR_PASSCODE",
         "DEFAULT_REPLICATE_MODEL",
         "DB_PATH",
@@ -25,10 +26,16 @@ def test_defaults_without_env(monkeypatch):
     assert s.app_title == "Generative AI CV Classroom Game"
     assert s.replicate_api_token is None
     assert s.default_replicate_model is None
+    assert s.app_passcode == "changeme"
     assert s.instructor_passcode == "changeme"
     assert isinstance(s.db_path, Path)
     assert isinstance(s.rounds_path, Path)
     assert s.use_stub_generation is False
+
+
+def test_app_passcode_env_override(monkeypatch):
+    monkeypatch.setenv("APP_PASSCODE", "let-me-in")
+    assert load_settings().app_passcode == "let-me-in"
 
 
 def test_env_override(monkeypatch):
@@ -77,6 +84,7 @@ def test_ensure_directories_creates_paths(tmp_path, monkeypatch):
     settings = AppSettings(
         app_title="Test",
         replicate_api_token=None,
+        app_passcode="x",
         instructor_passcode="x",
         default_replicate_model=None,
         db_path=tmp_path / "data" / "app.db",

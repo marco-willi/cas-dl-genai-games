@@ -26,6 +26,8 @@ from genai_cv_game.models import ModelEntry, Round, Submission
 _PENDING_TIMEOUT_SECONDS = 180
 # How often the "still generating" block re-polls the prediction.
 _STUDENT_POLL_SECONDS = 3
+# Round modes that pass source/cut-out images to the image-generation model.
+_IMAGE_INPUT_MODES = frozenset({"edit", "compose"})
 
 
 def render_student_view(settings: AppSettings) -> None:
@@ -40,6 +42,8 @@ def render_student_view(settings: AppSettings) -> None:
 
     if active.mode == "match":
         _render_target_image(active)
+    elif active.mode in _IMAGE_INPUT_MODES:
+        _render_input_images(active)
 
     if not active.submissions_open:
         st.warning(
@@ -65,6 +69,41 @@ def _render_target_image(round: Round) -> None:
             )
         else:
             st.warning("Target image is not available.")
+
+
+def _render_input_images(round: Round) -> None:
+    if not round.input_image_paths:
+        st.warning("This round has no input images configured.")
+        return
+
+    if round.mode == "edit":
+        caption = "Source image — edit this with your prompt."
+        tip = (
+            "Describe the change you want to apply. Be specific about what should "
+            "stay the same (subject, layout, text) and what should change "
+            "(lighting, style, background, time of day, weather, …)."
+        )
+    else:  # compose
+        caption = "Object — place this into a scene generated from your prompt."
+        tip = (
+            "Describe the scene that surrounds the object. Match lighting and "
+            "perspective in your prompt so the result looks coherent. The object "
+            "should remain the visual hero of the image."
+        )
+
+    missing = [p for p in round.input_image_paths if not Path(p).exists()]
+    available = [p for p in round.input_image_paths if Path(p).exists()]
+
+    if available:
+        cols = st.columns(min(3, len(available)))
+        for i, p in enumerate(available):
+            with cols[i % len(cols)]:
+                st.image(p, caption=caption if i == 0 else None)
+        st.caption(tip)
+    if missing:
+        st.warning(
+            f"{len(missing)} input image(s) not available: " + ", ".join(missing)
+        )
 
 
 # ── Team workspace (top-level form) ─────────────────────────────────────────
@@ -197,7 +236,11 @@ def _render_prompt_form(
         key=f"prompt_{round.id}_{next_num}",
     )
 
-    disabled = not prompt.strip() or model is None
+    disabled = (
+        not prompt.strip()
+        or model is None
+        or (round.mode in _IMAGE_INPUT_MODES and not _resolve_input_image_paths(round))
+    )
     if st.button("Generate", disabled=disabled, key=f"gen_{round.id}_{next_num}"):
         _handle_new_attempt(round, team_name, prompt.strip(), model, settings)
 
@@ -215,7 +258,16 @@ def _render_model_selector(
     disables Generate. In stub mode we return None silently (stub ignores it).
     """
     enabled = load_enabled_models(settings.models_path)
+    if round.mode in _IMAGE_INPUT_MODES:
+        enabled = [m for m in enabled if m.supports_image_input]
     if not enabled:
+        if round.mode in _IMAGE_INPUT_MODES:
+            st.error(
+                "This round needs an image-input model, but none are enabled. "
+                "Ask the instructor to enable a model with "
+                "`supports_image_input: true` in `data/models.json`."
+            )
+            return None
         if settings.use_stub_generation or settings.default_replicate_model:
             st.caption("Using the default model (no catalog configured).")
             return None
@@ -255,6 +307,15 @@ def _handle_new_attempt(
     settings: AppSettings,
 ) -> None:
     slug = model.slug if model else None
+    image_paths: list[Path] | None = None
+    if round.mode in _IMAGE_INPUT_MODES:
+        image_paths = _resolve_input_image_paths(round)
+        if not image_paths:
+            st.error(
+                "This round's input images are not available on disk. "
+                "Ask the instructor to add them to `assets/input_images/`."
+            )
+            return
     try:
         submission_id = create_submission(
             settings.db_path,
@@ -272,7 +333,12 @@ def _handle_new_attempt(
         return
     try:
         prediction_id = start_generation(
-            prompt, round.id, submission_id, settings, model_slug=slug
+            prompt,
+            round.id,
+            submission_id,
+            settings,
+            model_slug=slug,
+            image_input_paths=image_paths,
         )
         set_submission_prediction(settings.db_path, submission_id, prediction_id)
     except Exception as e:
@@ -282,6 +348,10 @@ def _handle_new_attempt(
         st.error(f"Could not start generation: {e}")
         return
     st.rerun()
+
+
+def _resolve_input_image_paths(round: Round) -> list[Path]:
+    return [Path(p) for p in round.input_image_paths if Path(p).exists()]
 
 
 # ── In-flight polling (auto-refresh while pending) ──────────────────────────

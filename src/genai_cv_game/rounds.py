@@ -11,7 +11,8 @@ from genai_cv_game.db import (
 )
 from genai_cv_game.models import Round
 
-_VALID_MODES = frozenset({"business", "match"})
+_VALID_MODES = frozenset({"business", "match", "edit", "compose"})
+_IMAGE_INPUT_MODES = frozenset({"edit", "compose"})
 
 
 def load_round_definitions(rounds_path: Path) -> list[Round]:
@@ -36,6 +37,31 @@ def load_round_definitions(rounds_path: Path) -> list[Round]:
         if item["id"] in seen_ids:
             raise ValueError(f"Duplicate round id: '{item['id']}'")
         seen_ids.add(item["id"])
+
+        input_image_paths = item.get("input_image_paths") or []
+        if not isinstance(input_image_paths, list) or not all(
+            isinstance(p, str) for p in input_image_paths
+        ):
+            raise ValueError(
+                f"Round '{item['id']}': 'input_image_paths' must be a list of strings."
+            )
+
+        if item["mode"] == "edit" and len(input_image_paths) != 1:
+            raise ValueError(
+                f"Round '{item['id']}' (edit) must declare exactly one "
+                f"input_image_paths entry."
+            )
+        if item["mode"] == "compose" and len(input_image_paths) < 1:
+            raise ValueError(
+                f"Round '{item['id']}' (compose) must declare at least one "
+                f"input_image_paths entry."
+            )
+        for p in input_image_paths:
+            if not Path(p).exists():
+                raise ValueError(
+                    f"Round '{item['id']}': input image not found on disk: {p}"
+                )
+
         rounds.append(
             Round(
                 id=item["id"],
@@ -43,6 +69,7 @@ def load_round_definitions(rounds_path: Path) -> list[Round]:
                 description=item["description"],
                 mode=item["mode"],
                 target_image_path=item.get("target_image_path"),
+                input_image_paths=input_image_paths,
             )
         )
 

@@ -7,6 +7,7 @@ class Round(BaseModel):
     description: str
     mode: str
     target_image_path: str | None = None
+    input_image_paths: list[str] = []
     is_active: bool = False
     submissions_open: bool = False
     gallery_revealed: bool = False
@@ -52,6 +53,7 @@ class ModelEntry(BaseModel):
     display_name: str
     description: str | None = None
     is_enabled: bool = True
+    supports_image_input: bool = False
     sort_order: int = 0
     created_at: str = ""
     updated_at: str = ""

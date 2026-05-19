@@ -61,6 +61,7 @@ def load_models(models_path: Path) -> list[ModelEntry]:
                 display_name=item["display_name"],
                 description=item.get("description"),
                 is_enabled=bool(item.get("is_enabled", True)),
+                supports_image_input=bool(item.get("supports_image_input", False)),
                 sort_order=int(item.get("sort_order", i)),
             )
         )

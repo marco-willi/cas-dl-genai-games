@@ -59,6 +59,30 @@ def test_insert_and_get_round(tmp_path):
     assert rounds[0].created_at != ""
 
 
+def test_round_input_image_paths_roundtrip(tmp_path):
+    db = tmp_path / "app.db"
+    init_db(db)
+    insert_or_update_round(
+        db,
+        _round(
+            "edit1",
+            mode="edit",
+            input_image_paths=["assets/input_images/edit/edit1.jpg"],
+        ),
+    )
+    [r] = get_all_rounds(db)
+    assert r.mode == "edit"
+    assert r.input_image_paths == ["assets/input_images/edit/edit1.jpg"]
+
+
+def test_round_input_image_paths_default_empty(tmp_path):
+    db = tmp_path / "app.db"
+    init_db(db)
+    insert_or_update_round(db, _round("b1", mode="business"))
+    [r] = get_all_rounds(db)
+    assert r.input_image_paths == []
+
+
 def test_upsert_round_preserves_state(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)

@@ -40,5 +40,21 @@
     "description": "Recreate the target image as closely as you can using text only. Pay close attention to the matryoshka-doll character lineup ordered by size, the 3D stylised character shapes (rounded, slightly oversized heads, simple expressive faces), the warm food-brand colour palette, what each character is holding, and the overall ad-photography feel against a neutral background.",
     "mode": "match",
     "target_image_path": "assets/target_images/marketing_campaign.png"
+  },
+  {
+    "id": "edit_relight_storefront",
+    "title": "Edit: relight a storefront at golden hour",
+    "description": "Edit the source image so the scene is at golden hour: warm low sun from the left, long soft shadows, slight haze. Keep the architecture, signage text, and people unchanged.",
+    "mode": "edit",
+    "target_image_path": null,
+    "input_image_paths": ["assets/input_images/edit/edit_relight_storefront.jpg"]
+  },
+  {
+    "id": "compose_product_in_scene",
+    "title": "Compose: place this product into a scene",
+    "description": "You are given a cut-out of a product. Generate a realistic lifestyle scene that uses the product as the hero element. Match the lighting and perspective of the scene to the cut-out, and keep the product's colour and shape unchanged.",
+    "mode": "compose",
+    "target_image_path": null,
+    "input_image_paths": ["assets/input_images/compose/compose_product_in_scene.png"]
   }
 ]

@@ -10,7 +10,8 @@
     "id": "nano-banana-2",
     "slug": "google/nano-banana-2",
     "display_name": "Google Nano Banana 2",
-    "description": "Smaller / faster Google model; good for quick iteration.",
+    "description": "Smaller / faster Google model; good for quick iteration. Supports image-input rounds (edit / compose).",
+    "supports_image_input": true,
     "sort_order": 20
   },
   {

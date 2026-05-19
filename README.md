@@ -77,11 +77,54 @@ Edit `data/rounds.json`. Each round is a JSON object:
 | `id` | unique string | Used as a directory name; keep it slug-safe |
 | `title` | string | Shown as the round heading |
 | `description` | string | Shown below the heading |
-| `mode` | `"business"` or `"match"` | Controls whether a target image is shown |
-| `target_image_path` | path string or `null` | Required for `match` mode; ignored for `business` |
+| `mode` | `"business"`, `"match"`, `"edit"`, or `"compose"` | Controls what reference imagery is shown and whether images are sent to the model |
+| `target_image_path` | path string or `null` | Required for `match` mode; ignored for the others |
+| `input_image_paths` | list of path strings | Required for `edit` (exactly 1) and `compose` (≥ 1); ignored for `business` / `match` |
 
 Rounds are synced into the database on every app start. Adding or renaming a round
 takes effect on the next restart; instructor state (active, open, revealed) is preserved.
+
+---
+
+## Edit / Compose rounds
+
+Two round modes feed an input image to the model and require a model marked with
+`supports_image_input: true` in `data/models.json` (currently
+`google/nano-banana-2`).
+
+- **`edit`** — shows the student one source image and asks them to write a
+  prompt that transforms it (e.g. relight, change weather, restyle).
+- **`compose`** — shows the student a cut-out object and asks them to write a
+  prompt for a scene built around that object.
+
+**Setup:**
+
+1. Drop the input file(s) into the matching directory, named after the round id:
+
+   ```
+   assets/input_images/edit/<round_id>.jpg
+   assets/input_images/compose/<round_id>.png   # transparent PNG works best
+   ```
+
+   Keep each file under ~1.5 MB so per-attempt uploads stay snappy.
+
+2. Reference them from `data/rounds.json`:
+
+   ```json
+   {
+     "id": "edit_relight_storefront",
+     "title": "Edit: relight a storefront at golden hour",
+     "description": "...",
+     "mode": "edit",
+     "input_image_paths": ["assets/input_images/edit/edit_relight_storefront.jpg"]
+   }
+   ```
+
+3. Restart the app. The round will refuse to load until every referenced file
+   exists on disk — the error message names the missing path.
+
+The student model dropdown is filtered to image-input-capable models for these
+rounds, and `nano-banana-2` is the recommended default.
 
 ---
 

@@ -111,3 +111,103 @@ def test_sync_creates_tables(tmp_path):
     sync_rounds_from_json(p, db)
     assert db.exists()
     assert get_active_round(db) is not None
+
+
+# ── edit / compose modes ────────────────────────────────────────────────────
+
+
+def _make_input(tmp_path, name: str) -> str:
+    p = tmp_path / name
+    p.write_bytes(b"\x89PNG fake")
+    return str(p)
+
+
+def test_load_edit_round_with_one_input(tmp_path):
+    img = _make_input(tmp_path, "src.jpg")
+    p = _write_rounds(
+        tmp_path,
+        [
+            {
+                "id": "edit1",
+                "title": "Edit",
+                "description": "d",
+                "mode": "edit",
+                "input_image_paths": [img],
+            }
+        ],
+    )
+    [r] = load_round_definitions(p)
+    assert r.mode == "edit"
+    assert r.input_image_paths == [img]
+
+
+def test_load_edit_round_requires_exactly_one_input(tmp_path):
+    img1 = _make_input(tmp_path, "a.jpg")
+    img2 = _make_input(tmp_path, "b.jpg")
+    p = _write_rounds(
+        tmp_path,
+        [
+            {
+                "id": "edit1",
+                "title": "Edit",
+                "description": "d",
+                "mode": "edit",
+                "input_image_paths": [img1, img2],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="exactly one"):
+        load_round_definitions(p)
+
+
+def test_load_edit_round_rejects_missing_file(tmp_path):
+    p = _write_rounds(
+        tmp_path,
+        [
+            {
+                "id": "edit1",
+                "title": "Edit",
+                "description": "d",
+                "mode": "edit",
+                "input_image_paths": [str(tmp_path / "nope.jpg")],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="not found"):
+        load_round_definitions(p)
+
+
+def test_load_compose_round_requires_at_least_one_input(tmp_path):
+    p = _write_rounds(
+        tmp_path,
+        [
+            {
+                "id": "compose1",
+                "title": "Compose",
+                "description": "d",
+                "mode": "compose",
+                "input_image_paths": [],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="at least one"):
+        load_round_definitions(p)
+
+
+def test_load_compose_round_allows_multiple_inputs(tmp_path):
+    img1 = _make_input(tmp_path, "cut.png")
+    img2 = _make_input(tmp_path, "ref.png")
+    p = _write_rounds(
+        tmp_path,
+        [
+            {
+                "id": "compose1",
+                "title": "Compose",
+                "description": "d",
+                "mode": "compose",
+                "input_image_paths": [img1, img2],
+            }
+        ],
+    )
+    [r] = load_round_definitions(p)
+    assert r.input_image_paths == [img1, img2]

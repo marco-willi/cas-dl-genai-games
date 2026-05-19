@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -38,18 +39,19 @@ def create_tables(db_path: Path) -> None:
     with get_connection(db_path) as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS rounds (
-                id                TEXT PRIMARY KEY,
-                title             TEXT NOT NULL,
-                description       TEXT NOT NULL,
-                mode              TEXT NOT NULL,
-                target_image_path TEXT,
-                is_active         INTEGER NOT NULL DEFAULT 0,
-                submissions_open  INTEGER NOT NULL DEFAULT 0,
-                gallery_revealed  INTEGER NOT NULL DEFAULT 0,
-                prompts_revealed  INTEGER NOT NULL DEFAULT 0,
-                voting_open       INTEGER NOT NULL DEFAULT 0,
-                created_at        TEXT NOT NULL,
-                updated_at        TEXT NOT NULL
+                id                 TEXT PRIMARY KEY,
+                title              TEXT NOT NULL,
+                description        TEXT NOT NULL,
+                mode               TEXT NOT NULL,
+                target_image_path  TEXT,
+                input_image_paths  TEXT NOT NULL DEFAULT '[]',
+                is_active          INTEGER NOT NULL DEFAULT 0,
+                submissions_open   INTEGER NOT NULL DEFAULT 0,
+                gallery_revealed   INTEGER NOT NULL DEFAULT 0,
+                prompts_revealed   INTEGER NOT NULL DEFAULT 0,
+                voting_open        INTEGER NOT NULL DEFAULT 0,
+                created_at         TEXT NOT NULL,
+                updated_at         TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS submissions (
@@ -88,13 +90,22 @@ def insert_or_update_round(db_path: Path, round: Round) -> None:
     with get_connection(db_path) as conn:
         conn.execute(
             """
-            INSERT INTO rounds (id, title, description, mode, target_image_path, created_at, updated_at)
-            VALUES (:id, :title, :description, :mode, :target_image_path, :ts, :ts)
+            INSERT INTO rounds (
+                id, title, description, mode,
+                target_image_path, input_image_paths,
+                created_at, updated_at
+            )
+            VALUES (
+                :id, :title, :description, :mode,
+                :target_image_path, :input_image_paths,
+                :ts, :ts
+            )
             ON CONFLICT(id) DO UPDATE SET
                 title             = excluded.title,
                 description       = excluded.description,
                 mode              = excluded.mode,
                 target_image_path = excluded.target_image_path,
+                input_image_paths = excluded.input_image_paths,
                 updated_at        = excluded.updated_at
             """,
             {
@@ -103,6 +114,7 @@ def insert_or_update_round(db_path: Path, round: Round) -> None:
                 "description": round.description,
                 "mode": round.mode,
                 "target_image_path": round.target_image_path,
+                "input_image_paths": json.dumps(round.input_image_paths),
                 "ts": ts,
             },
         )
@@ -388,12 +400,14 @@ def get_vote_counts(db_path: Path, round_id: str) -> dict[str, int]:
 
 
 def _row_to_round(row: sqlite3.Row) -> Round:
+    raw_inputs = row["input_image_paths"] or "[]"
     return Round(
         id=row["id"],
         title=row["title"],
         description=row["description"],
         mode=row["mode"],
         target_image_path=row["target_image_path"],
+        input_image_paths=json.loads(raw_inputs),
         is_active=bool(row["is_active"]),
         submissions_open=bool(row["submissions_open"]),
         gallery_revealed=bool(row["gallery_revealed"]),

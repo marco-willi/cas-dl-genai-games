@@ -102,6 +102,28 @@ def test_load_sorts_by_sort_order_then_display_name(tmp_path):
     assert [e.id for e in load_models(p)] == ["a", "b", "c"]
 
 
+def test_load_supports_image_input_defaults_false(tmp_path):
+    p = _write_models(tmp_path, [{"id": "a", "slug": "x/a", "display_name": "A"}])
+    [e] = load_models(p)
+    assert e.supports_image_input is False
+
+
+def test_load_supports_image_input_when_set(tmp_path):
+    p = _write_models(
+        tmp_path,
+        [
+            {
+                "id": "a",
+                "slug": "x/a",
+                "display_name": "A",
+                "supports_image_input": True,
+            }
+        ],
+    )
+    [e] = load_models(p)
+    assert e.supports_image_input is True
+
+
 def test_load_enabled_models_filters_disabled(tmp_path):
     p = _write_models(
         tmp_path,

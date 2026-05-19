@@ -41,6 +41,7 @@ def start_generation(
     submission_id: str,
     settings: AppSettings,
     model_slug: str | None = None,
+    image_input_paths: list[Path] | None = None,
 ) -> str:
     """Kick off an image generation. Returns a prediction id (or stub sentinel).
 
@@ -49,6 +50,10 @@ def start_generation(
 
     `model_slug` selects which Replicate model to use. If omitted, falls back
     to `settings.default_replicate_model`. Stub mode ignores it.
+
+    `image_input_paths`, when non-empty, are opened in binary mode and passed
+    as the `image_input` field — used by edit/compose rounds that feed source
+    or cut-out images to the model. The replicate client uploads the handles.
     """
     if settings.use_stub_generation:
         _generate_stub(round_id, submission_id, settings)
@@ -60,14 +65,24 @@ def start_generation(
     if not chosen_model:
         raise RuntimeError("No Replicate model is configured.")
 
+    payload: dict[str, object] = {"prompt": prompt}
+    file_handles: list = []
     try:
-        client = replicate.Client(api_token=settings.replicate_api_token)
-        version_id = _resolve_version(client, chosen_model)
-        prediction = client.predictions.create(
-            version=version_id, input={"prompt": prompt}
-        )
-    except Exception as e:
-        raise RuntimeError(f"Failed to start generation: {e}") from e
+        if image_input_paths:
+            file_handles = [Path(p).open("rb") for p in image_input_paths]
+            payload["image_input"] = file_handles
+        try:
+            client = replicate.Client(api_token=settings.replicate_api_token)
+            version_id = _resolve_version(client, chosen_model)
+            prediction = client.predictions.create(version=version_id, input=payload)
+        except Exception as e:
+            raise RuntimeError(f"Failed to start generation: {e}") from e
+    finally:
+        for fh in file_handles:
+            try:
+                fh.close()
+            except Exception:
+                pass
     return str(prediction.id)
 
 

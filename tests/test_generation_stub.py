@@ -177,6 +177,60 @@ def test_real_start_returns_prediction_id(tmp_path, monkeypatch):
     )
 
 
+def test_real_start_with_image_input_passes_file_handles(tmp_path, monkeypatch):
+    img = tmp_path / "src.png"
+    img.write_bytes(b"\x89PNG fake")
+
+    captured = {}
+
+    def fake_create(*, version, input):
+        captured["version"] = version
+        captured["input"] = input
+        fake_prediction = MagicMock()
+        fake_prediction.id = "pred_img"
+        return fake_prediction
+
+    fake_client = MagicMock()
+    fake_client.predictions.create.side_effect = fake_create
+    monkeypatch.setattr(
+        "genai_cv_game.generation.replicate.Client", lambda api_token: fake_client
+    )
+    monkeypatch.setattr(
+        "genai_cv_game.generation._resolve_version", lambda client, model: "v1"
+    )
+
+    s = _settings(tmp_path, stub=False, token="tok", model="some/model")
+    pred_id = start_generation("a prompt", "r1", "sub1", s, image_input_paths=[img])
+    assert pred_id == "pred_img"
+    assert "image_input" in captured["input"]
+    handles = captured["input"]["image_input"]
+    assert len(handles) == 1
+    assert handles[0].name == str(img)
+
+
+def test_real_start_without_image_input_omits_field(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_create(*, version, input):
+        captured["input"] = input
+        fake_prediction = MagicMock()
+        fake_prediction.id = "pred_text"
+        return fake_prediction
+
+    fake_client = MagicMock()
+    fake_client.predictions.create.side_effect = fake_create
+    monkeypatch.setattr(
+        "genai_cv_game.generation.replicate.Client", lambda api_token: fake_client
+    )
+    monkeypatch.setattr(
+        "genai_cv_game.generation._resolve_version", lambda client, model: "v1"
+    )
+
+    s = _settings(tmp_path, stub=False, token="tok", model="some/model")
+    start_generation("a prompt", "r1", "sub1", s)
+    assert "image_input" not in captured["input"]
+
+
 def test_real_start_wraps_errors(tmp_path, monkeypatch):
     fake_client = MagicMock()
     fake_client.predictions.create.side_effect = RuntimeError("boom")

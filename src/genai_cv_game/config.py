@@ -49,3 +49,7 @@ def ensure_directories(settings: AppSettings) -> None:
     settings.generated_dir.mkdir(parents=True, exist_ok=True)
     (settings.assets_dir / "target_images").mkdir(parents=True, exist_ok=True)
     (settings.assets_dir / "placeholder").mkdir(parents=True, exist_ok=True)
+    (settings.assets_dir / "input_images" / "edit").mkdir(parents=True, exist_ok=True)
+    (settings.assets_dir / "input_images" / "compose").mkdir(
+        parents=True, exist_ok=True
+    )

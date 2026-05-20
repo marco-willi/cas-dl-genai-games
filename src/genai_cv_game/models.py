@@ -1,41 +1,36 @@
 from pydantic import BaseModel
 
 
-class Round(BaseModel):
+class Task(BaseModel):
     id: str
     title: str
     description: str
     mode: str
     target_image_path: str | None = None
     input_image_paths: list[str] = []
-    is_active: bool = False
-    submissions_open: bool = False
-    gallery_revealed: bool = False
-    prompts_revealed: bool = False
-    voting_open: bool = False
+    is_available: bool = True
     created_at: str = ""
     updated_at: str = ""
 
 
-class Submission(BaseModel):
-    """One generation attempt by a team in a round.
+class Generation(BaseModel):
+    """One generation attempt by a user on a task.
 
-    A team may accumulate several draft rows (one per generate click, up to
-    `AppSettings.max_attempts`); exactly one of them ends up with
-    `is_chosen=True` when the team picks their favourite. The chosen row is
-    what the gallery and CSV export read.
+    A user may accumulate up to `AppSettings.generation_budget` non-failed rows
+    per task; at most one of them has `in_gallery=True` when the user promotes
+    a favourite into the task's public gallery.
     """
 
     id: str
-    round_id: str
-    team_name: str
+    task_id: str
+    user_name: str
     prompt: str
     image_path: str | None = None
     status: str
     error_message: str | None = None
     prediction_id: str | None = None
     model_slug: str | None = None
-    is_chosen: bool = False
+    in_gallery: bool = False
     created_at: str
     updated_at: str
 
@@ -43,9 +38,8 @@ class Submission(BaseModel):
 class ModelEntry(BaseModel):
     """An entry in the catalog of selectable Replicate models.
 
-    The catalog is loaded from a JSON file and synced into the `models` table
-    on startup. Instructors can toggle `is_enabled` at runtime; the student
-    UI only offers enabled entries.
+    The catalog is loaded from a JSON file. The student UI only offers entries
+    with `is_enabled` true.
     """
 
     id: str

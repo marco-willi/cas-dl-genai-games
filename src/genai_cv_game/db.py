@@ -6,13 +6,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from genai_cv_game.models import Round, Submission
+from genai_cv_game.models import Generation, Task
 from genai_cv_game.utils import new_id, now_utc
 
-_ALLOWED_ROUND_STATE_KEYS = frozenset(
-    {"submissions_open", "gallery_revealed", "prompts_revealed", "voting_open"}
-)
-_ALLOWED_SUBMISSION_STATUSES = frozenset({"pending", "completed", "failed"})
+_ALLOWED_GENERATION_STATUSES = frozenset({"pending", "completed", "failed"})
+_API_ENABLED_KEY = "api_enabled"
 
 
 @contextmanager
@@ -38,59 +36,61 @@ def init_db(db_path: Path) -> None:
 def create_tables(db_path: Path) -> None:
     with get_connection(db_path) as conn:
         conn.executescript("""
-            CREATE TABLE IF NOT EXISTS rounds (
+            CREATE TABLE IF NOT EXISTS tasks (
                 id                 TEXT PRIMARY KEY,
                 title              TEXT NOT NULL,
                 description        TEXT NOT NULL,
                 mode               TEXT NOT NULL,
                 target_image_path  TEXT,
                 input_image_paths  TEXT NOT NULL DEFAULT '[]',
-                is_active          INTEGER NOT NULL DEFAULT 0,
-                submissions_open   INTEGER NOT NULL DEFAULT 0,
-                gallery_revealed   INTEGER NOT NULL DEFAULT 0,
-                prompts_revealed   INTEGER NOT NULL DEFAULT 0,
-                voting_open        INTEGER NOT NULL DEFAULT 0,
+                is_available       INTEGER NOT NULL DEFAULT 1,
                 created_at         TEXT NOT NULL,
                 updated_at         TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS submissions (
+            CREATE TABLE IF NOT EXISTS generations (
                 id            TEXT PRIMARY KEY,
-                round_id      TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
-                team_name     TEXT NOT NULL,
+                task_id       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                user_name     TEXT NOT NULL,
                 prompt        TEXT NOT NULL,
                 image_path    TEXT,
                 status        TEXT NOT NULL,
                 error_message TEXT,
                 prediction_id TEXT,
                 model_slug    TEXT,
-                is_chosen     INTEGER NOT NULL DEFAULT 0,
+                in_gallery    INTEGER NOT NULL DEFAULT 0,
                 created_at    TEXT NOT NULL,
                 updated_at    TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS votes (
-                id            TEXT PRIMARY KEY,
-                round_id      TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
-                submission_id TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
-                voter_name    TEXT NOT NULL,
-                created_at    TEXT NOT NULL,
-                UNIQUE (round_id, voter_name)
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS idx_submissions_round_team
-                ON submissions (round_id, LOWER(team_name));
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_submissions_chosen_round_team
-                ON submissions (round_id, LOWER(team_name)) WHERE is_chosen=1;
+            CREATE INDEX IF NOT EXISTS idx_generations_task_user
+                ON generations (task_id, LOWER(user_name));
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_generations_gallery_task_user
+                ON generations (task_id, LOWER(user_name)) WHERE in_gallery=1;
         """)
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value, updated_at) "
+            "VALUES (?, '1', ?)",
+            (_API_ENABLED_KEY, now_utc()),
+        )
 
 
-def insert_or_update_round(db_path: Path, round: Round) -> None:
+# ── Tasks ───────────────────────────────────────────────────────────────────
+
+
+def insert_or_update_task(db_path: Path, task: Task) -> None:
+    """Upsert a task's definitional columns, preserving is_available."""
     ts = now_utc()
     with get_connection(db_path) as conn:
         conn.execute(
             """
-            INSERT INTO rounds (
+            INSERT INTO tasks (
                 id, title, description, mode,
                 target_image_path, input_image_paths,
                 created_at, updated_at
@@ -109,280 +109,241 @@ def insert_or_update_round(db_path: Path, round: Round) -> None:
                 updated_at        = excluded.updated_at
             """,
             {
-                "id": round.id,
-                "title": round.title,
-                "description": round.description,
-                "mode": round.mode,
-                "target_image_path": round.target_image_path,
-                "input_image_paths": json.dumps(round.input_image_paths),
+                "id": task.id,
+                "title": task.title,
+                "description": task.description,
+                "mode": task.mode,
+                "target_image_path": task.target_image_path,
+                "input_image_paths": json.dumps(task.input_image_paths),
                 "ts": ts,
             },
         )
 
 
-def get_all_rounds(db_path: Path) -> list[Round]:
+def get_all_tasks(db_path: Path) -> list[Task]:
     with get_connection(db_path) as conn:
-        rows = conn.execute("SELECT * FROM rounds ORDER BY created_at").fetchall()
-    return [_row_to_round(r) for r in rows]
+        rows = conn.execute("SELECT * FROM tasks ORDER BY created_at").fetchall()
+    return [_row_to_task(r) for r in rows]
 
 
-def get_active_round(db_path: Path) -> Round | None:
+def get_available_tasks(db_path: Path) -> list[Task]:
     with get_connection(db_path) as conn:
-        row = conn.execute("SELECT * FROM rounds WHERE is_active=1 LIMIT 1").fetchone()
-    return _row_to_round(row) if row else None
+        rows = conn.execute(
+            "SELECT * FROM tasks WHERE is_available=1 ORDER BY created_at"
+        ).fetchall()
+    return [_row_to_task(r) for r in rows]
 
 
-def set_active_round(db_path: Path, round_id: str) -> None:
+def get_task(db_path: Path, task_id: str) -> Task | None:
+    with get_connection(db_path) as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    return _row_to_task(row) if row else None
+
+
+def set_task_availability(db_path: Path, task_id: str, is_available: bool) -> None:
     ts = now_utc()
     with get_connection(db_path) as conn:
-        exists = conn.execute("SELECT 1 FROM rounds WHERE id=?", (round_id,)).fetchone()
+        exists = conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone()
         if not exists:
-            raise ValueError(f"Unknown round id: {round_id!r}")
+            raise ValueError(f"Unknown task id: {task_id!r}")
         conn.execute(
-            "UPDATE rounds SET is_active=0, updated_at=? WHERE is_active=1", (ts,)
-        )
-        conn.execute(
-            "UPDATE rounds SET is_active=1, updated_at=? WHERE id=?", (ts, round_id)
+            "UPDATE tasks SET is_available=?, updated_at=? WHERE id=?",
+            (int(is_available), ts, task_id),
         )
 
 
-def update_round_state(db_path: Path, round_id: str, **kwargs) -> None:
-    unknown = set(kwargs) - _ALLOWED_ROUND_STATE_KEYS
-    if unknown:
-        raise ValueError(f"Unknown round state keys: {unknown}")
-    if not kwargs:
-        return
-    ts = now_utc()
-    set_clause = ", ".join(f"{k}=?" for k in kwargs)
-    values = [int(v) for v in kwargs.values()] + [ts, round_id]
-    with get_connection(db_path) as conn:
-        conn.execute(f"UPDATE rounds SET {set_clause}, updated_at=? WHERE id=?", values)
+# ── Generations ───────────────────────────────────────────────────────────────
 
 
-class DuplicateSubmissionError(Exception):
-    """The team has already chosen a submission for this round."""
+class BudgetReachedError(Exception):
+    """A user has used all of their generation budget for this task."""
 
 
-class MaxAttemptsReachedError(Exception):
-    """A team has used all of its generation attempts for this round."""
-
-
-def create_submission(
+def create_generation(
     db_path: Path,
-    round_id: str,
-    team_name: str,
+    task_id: str,
+    user_name: str,
     prompt: str,
-    max_attempts: int,
+    generation_budget: int,
     model_slug: str | None = None,
 ) -> str:
-    """Create a new draft submission (pending, is_chosen=0).
+    """Create a new pending generation for a user on a task.
+
+    Budget counts only non-failed rows (pending + completed); failed rows are
+    discardable and do not consume a slot.
 
     Raises:
-        ValueError: team_name is blank or max_attempts < 1.
-        DuplicateSubmissionError: team already has a chosen submission.
-        MaxAttemptsReachedError: team already has max_attempts rows.
+        ValueError: user_name is blank or generation_budget < 1.
+        BudgetReachedError: user already has `generation_budget` non-failed rows.
     """
-    normalized = team_name.strip()
+    normalized = user_name.strip()
     if not normalized:
-        raise ValueError("team_name must not be empty")
-    if max_attempts < 1:
-        raise ValueError("max_attempts must be >= 1")
-    sub_id = new_id()
+        raise ValueError("user_name must not be empty")
+    if generation_budget < 1:
+        raise ValueError("generation_budget must be >= 1")
+    gen_id = new_id()
     ts = now_utc()
     with get_connection(db_path) as conn:
         row = conn.execute(
             """
-            SELECT COUNT(*) AS total, COALESCE(SUM(is_chosen), 0) AS chosen
-            FROM submissions
-            WHERE round_id=? AND LOWER(team_name)=LOWER(?)
+            SELECT COUNT(*) AS live
+            FROM generations
+            WHERE task_id=? AND LOWER(user_name)=LOWER(?) AND status<>'failed'
             """,
-            (round_id, normalized),
+            (task_id, normalized),
         ).fetchone()
-        if row["chosen"]:
-            raise DuplicateSubmissionError(
-                f"Team '{normalized}' has already submitted to this round."
-            )
-        if row["total"] >= max_attempts:
-            raise MaxAttemptsReachedError(
-                f"Team '{normalized}' has reached the limit of {max_attempts} attempts."
+        if row["live"] >= generation_budget:
+            raise BudgetReachedError(
+                f"'{normalized}' has used all {generation_budget} generations "
+                "for this task."
             )
         conn.execute(
             """
-            INSERT INTO submissions
-                (id, round_id, team_name, prompt, status, model_slug,
-                 is_chosen, created_at, updated_at)
+            INSERT INTO generations
+                (id, task_id, user_name, prompt, status, model_slug,
+                 in_gallery, created_at, updated_at)
             VALUES (?, ?, ?, ?, 'pending', ?, 0, ?, ?)
             """,
-            (sub_id, round_id, normalized, prompt, model_slug, ts, ts),
+            (gen_id, task_id, normalized, prompt, model_slug, ts, ts),
         )
-    return sub_id
+    return gen_id
 
 
-def set_submission_prediction(
-    db_path: Path, submission_id: str, prediction_id: str
+def set_generation_prediction(
+    db_path: Path, generation_id: str, prediction_id: str
 ) -> None:
     ts = now_utc()
     with get_connection(db_path) as conn:
         conn.execute(
-            "UPDATE submissions SET prediction_id=?, updated_at=? WHERE id=?",
-            (prediction_id, ts, submission_id),
+            "UPDATE generations SET prediction_id=?, updated_at=? WHERE id=?",
+            (prediction_id, ts, generation_id),
         )
 
 
-def update_submission_status(
+def update_generation_status(
     db_path: Path,
-    submission_id: str,
+    generation_id: str,
     status: str,
     image_path: str | None = None,
     error_message: str | None = None,
 ) -> None:
-    if status not in _ALLOWED_SUBMISSION_STATUSES:
+    if status not in _ALLOWED_GENERATION_STATUSES:
         raise ValueError(
             f"Invalid status {status!r}. Must be one of: "
-            f"{sorted(_ALLOWED_SUBMISSION_STATUSES)}"
+            f"{sorted(_ALLOWED_GENERATION_STATUSES)}"
         )
     ts = now_utc()
     with get_connection(db_path) as conn:
         conn.execute(
             """
-            UPDATE submissions
+            UPDATE generations
             SET status=?, image_path=?, error_message=?, updated_at=?
             WHERE id=?
             """,
-            (status, image_path, error_message, ts, submission_id),
+            (status, image_path, error_message, ts, generation_id),
         )
 
 
-def choose_submission(db_path: Path, submission_id: str) -> None:
-    """Mark a completed draft as the team's final submission for the round.
+def submit_to_gallery(db_path: Path, generation_id: str) -> None:
+    """Mark a completed generation as the user's single gallery entry for the task.
 
-    Deletes the team's other draft rows so the chosen one is the only entry
-    that survives. Raises ValueError if the row is missing or not completed,
-    DuplicateSubmissionError if the team has already chosen another row.
+    Clears any other in_gallery row for the same (task, user) so exactly one
+    stays — but does NOT delete sibling generations. Raises ValueError if the
+    row is missing or not completed.
     """
     ts = now_utc()
     with get_connection(db_path) as conn:
         row = conn.execute(
-            "SELECT round_id, team_name, status FROM submissions WHERE id=?",
-            (submission_id,),
+            "SELECT task_id, user_name, status FROM generations WHERE id=?",
+            (generation_id,),
         ).fetchone()
         if not row:
-            raise ValueError(f"Unknown submission id: {submission_id!r}")
+            raise ValueError(f"Unknown generation id: {generation_id!r}")
         if row["status"] != "completed":
             raise ValueError(
-                f"Submission {submission_id!r} has status {row['status']!r}; "
-                "only completed submissions can be chosen."
-            )
-        already_chosen = conn.execute(
-            """
-            SELECT 1 FROM submissions
-            WHERE round_id=? AND LOWER(team_name)=LOWER(?)
-              AND is_chosen=1 AND id <> ?
-            """,
-            (row["round_id"], row["team_name"], submission_id),
-        ).fetchone()
-        if already_chosen:
-            raise DuplicateSubmissionError(
-                f"Team '{row['team_name']}' has already submitted to this round."
+                f"Generation {generation_id!r} has status {row['status']!r}; "
+                "only completed generations can be shown in the gallery."
             )
         conn.execute(
             """
-            DELETE FROM submissions
-            WHERE round_id=? AND LOWER(team_name)=LOWER(?) AND id <> ?
+            UPDATE generations SET in_gallery=0, updated_at=?
+            WHERE task_id=? AND LOWER(user_name)=LOWER(?) AND id<>?
             """,
-            (row["round_id"], row["team_name"], submission_id),
+            (ts, row["task_id"], row["user_name"], generation_id),
         )
         conn.execute(
-            "UPDATE submissions SET is_chosen=1, updated_at=? WHERE id=?",
-            (ts, submission_id),
+            "UPDATE generations SET in_gallery=1, updated_at=? WHERE id=?",
+            (ts, generation_id),
         )
 
 
-def get_submissions_for_round(db_path: Path, round_id: str) -> list[Submission]:
-    """Return chosen submissions for the round — the gallery / CSV view."""
+def remove_from_gallery(db_path: Path, generation_id: str) -> None:
+    ts = now_utc()
+    with get_connection(db_path) as conn:
+        conn.execute(
+            "UPDATE generations SET in_gallery=0, updated_at=? WHERE id=?",
+            (ts, generation_id),
+        )
+
+
+def get_gallery_generations(db_path: Path, task_id: str) -> list[Generation]:
+    """Return the gallery entries for a task — one per user that has chosen."""
     with get_connection(db_path) as conn:
         rows = conn.execute(
-            "SELECT * FROM submissions WHERE round_id=? AND is_chosen=1 ORDER BY created_at",
-            (round_id,),
+            "SELECT * FROM generations WHERE task_id=? AND in_gallery=1 "
+            "ORDER BY created_at",
+            (task_id,),
         ).fetchall()
-    return [_row_to_submission(r) for r in rows]
+    return [_row_to_generation(r) for r in rows]
 
 
-def get_team_submissions(
-    db_path: Path, round_id: str, team_name: str
-) -> list[Submission]:
-    """Return all rows (drafts + chosen) for a single team in a round."""
-    needle = team_name.strip()
+def get_user_generations(
+    db_path: Path, task_id: str, user_name: str
+) -> list[Generation]:
+    """Return all generations for a single user on a task."""
+    needle = user_name.strip()
     with get_connection(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT * FROM submissions
-            WHERE round_id=? AND LOWER(team_name)=LOWER(?)
+            SELECT * FROM generations
+            WHERE task_id=? AND LOWER(user_name)=LOWER(?)
             ORDER BY created_at
             """,
-            (round_id, needle),
+            (task_id, needle),
         ).fetchall()
-    return [_row_to_submission(r) for r in rows]
+    return [_row_to_generation(r) for r in rows]
 
 
-def delete_submission(db_path: Path, submission_id: str) -> None:
+def delete_generation(db_path: Path, generation_id: str) -> None:
     with get_connection(db_path) as conn:
-        conn.execute("DELETE FROM submissions WHERE id=?", (submission_id,))
+        conn.execute("DELETE FROM generations WHERE id=?", (generation_id,))
 
 
-def delete_team_submissions(db_path: Path, round_id: str, team_name: str) -> None:
+def delete_user_generations(db_path: Path, task_id: str, user_name: str) -> None:
     with get_connection(db_path) as conn:
         conn.execute(
-            "DELETE FROM submissions WHERE round_id=? AND LOWER(team_name)=LOWER(?)",
-            (round_id, team_name.strip()),
+            "DELETE FROM generations WHERE task_id=? AND LOWER(user_name)=LOWER(?)",
+            (task_id, user_name.strip()),
         )
 
 
-def reset_round_submissions(db_path: Path, round_id: str) -> None:
-    """Delete all submissions and votes for a round, and reset its state flags.
-
-    State flags are reset so the gallery is not left visible (and voting is not
-    left open) after a mid-class reset.
-    """
-    ts = now_utc()
+def reset_task_generations(db_path: Path, task_id: str) -> None:
+    """Delete every generation for one task (per-task gallery reset)."""
     with get_connection(db_path) as conn:
-        conn.execute("DELETE FROM votes WHERE round_id=?", (round_id,))
-        conn.execute("DELETE FROM submissions WHERE round_id=?", (round_id,))
-        conn.execute(
-            """
-            UPDATE rounds
-            SET submissions_open=0,
-                gallery_revealed=0,
-                prompts_revealed=0,
-                voting_open=0,
-                updated_at=?
-            WHERE id=?
-            """,
-            (ts, round_id),
-        )
+        conn.execute("DELETE FROM generations WHERE task_id=?", (task_id,))
 
 
-def create_vote(
-    db_path: Path, round_id: str, submission_id: str, voter_name: str
-) -> str:
-    normalized = voter_name.strip().lower()
-    if not normalized:
-        raise ValueError("voter_name must not be empty")
-    vote_id = new_id()
-    ts = now_utc()
+def reset_all_generations(db_path: Path) -> None:
+    """Delete every generation across all tasks (global gallery reset)."""
     with get_connection(db_path) as conn:
-        conn.execute(
-            "INSERT INTO votes (id, round_id, submission_id, voter_name, created_at) VALUES (?, ?, ?, ?, ?)",
-            (vote_id, round_id, submission_id, normalized, ts),
-        )
-    return vote_id
+        conn.execute("DELETE FROM generations")
 
 
 def delete_database(db_path: Path) -> None:
     """Remove the SQLite DB file and its WAL/SHM sidecars.
 
-    Callers are expected to re-run init_db / sync_rounds_from_json afterwards
-    so the schema and rounds are restored on the next render.
+    Callers are expected to re-run init_db / sync_tasks_from_json afterwards
+    so the schema and tasks are restored on the next render.
     """
     for suffix in ("", "-wal", "-shm"):
         sidecar = db_path.with_name(db_path.name + suffix) if suffix else db_path
@@ -390,46 +351,70 @@ def delete_database(db_path: Path) -> None:
             sidecar.unlink()
 
 
-def get_vote_counts(db_path: Path, round_id: str) -> dict[str, int]:
+# ── App settings ──────────────────────────────────────────────────────────────
+
+
+def get_setting(db_path: Path, key: str) -> str | None:
     with get_connection(db_path) as conn:
-        rows = conn.execute(
-            "SELECT submission_id, COUNT(*) as cnt FROM votes WHERE round_id=? GROUP BY submission_id",
-            (round_id,),
-        ).fetchall()
-    return {row["submission_id"]: row["cnt"] for row in rows}
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key=?", (key,)
+        ).fetchone()
+    return row["value"] if row else None
 
 
-def _row_to_round(row: sqlite3.Row) -> Round:
+def set_setting(db_path: Path, key: str, value: str) -> None:
+    ts = now_utc()
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value      = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (key, value, ts),
+        )
+
+
+def is_api_enabled(db_path: Path) -> bool:
+    return get_setting(db_path, _API_ENABLED_KEY) == "1"
+
+
+def set_api_enabled(db_path: Path, enabled: bool) -> None:
+    set_setting(db_path, _API_ENABLED_KEY, "1" if enabled else "0")
+
+
+# ── Row mappers ───────────────────────────────────────────────────────────────
+
+
+def _row_to_task(row: sqlite3.Row) -> Task:
     raw_inputs = row["input_image_paths"] or "[]"
-    return Round(
+    return Task(
         id=row["id"],
         title=row["title"],
         description=row["description"],
         mode=row["mode"],
         target_image_path=row["target_image_path"],
         input_image_paths=json.loads(raw_inputs),
-        is_active=bool(row["is_active"]),
-        submissions_open=bool(row["submissions_open"]),
-        gallery_revealed=bool(row["gallery_revealed"]),
-        prompts_revealed=bool(row["prompts_revealed"]),
-        voting_open=bool(row["voting_open"]),
+        is_available=bool(row["is_available"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
 
 
-def _row_to_submission(row: sqlite3.Row) -> Submission:
-    return Submission(
+def _row_to_generation(row: sqlite3.Row) -> Generation:
+    return Generation(
         id=row["id"],
-        round_id=row["round_id"],
-        team_name=row["team_name"],
+        task_id=row["task_id"],
+        user_name=row["user_name"],
         prompt=row["prompt"],
         image_path=row["image_path"],
         status=row["status"],
         error_message=row["error_message"],
         prediction_id=row["prediction_id"],
         model_slug=row["model_slug"],
-        is_chosen=bool(row["is_chosen"]),
+        in_gallery=bool(row["in_gallery"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

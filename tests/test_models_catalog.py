@@ -1,4 +1,4 @@
-"""Tests for the JSON-only model catalog and submission threading of model_slug."""
+"""Tests for the JSON-only model catalog and generation threading of model_slug."""
 
 import json
 from pathlib import Path
@@ -6,20 +6,20 @@ from pathlib import Path
 import pytest
 
 from genai_cv_game.db import (
-    choose_submission,
-    create_submission,
-    get_submissions_for_round,
-    get_team_submissions,
+    create_generation,
+    get_gallery_generations,
+    get_user_generations,
     init_db,
-    insert_or_update_round,
-    update_submission_status,
+    insert_or_update_task,
+    submit_to_gallery,
+    update_generation_status,
 )
 from genai_cv_game.model_catalog import (
     find_model,
     load_enabled_models,
     load_models,
 )
-from genai_cv_game.models import Round
+from genai_cv_game.models import Task
 
 
 def _write_models(tmp_path: Path, items: list[dict]) -> Path:
@@ -28,8 +28,8 @@ def _write_models(tmp_path: Path, items: list[dict]) -> Path:
     return p
 
 
-def _round() -> Round:
-    return Round(id="r1", title="T", description="d", mode="business")
+def _task() -> Task:
+    return Task(id="t1", title="T", description="d", mode="business")
 
 
 # ── JSON loader ─────────────────────────────────────────────────────────────
@@ -145,36 +145,38 @@ def test_find_model_missing_file_returns_none(tmp_path):
     assert find_model(tmp_path / "nope.json", "x/a") is None
 
 
-# ── threading model_slug through submissions ───────────────────────────────
+# ── threading model_slug through generations ───────────────────────────────
 
 
-def test_create_submission_stores_model_slug(tmp_path):
+def test_create_generation_stores_model_slug(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
-    insert_or_update_round(db, _round())
-    create_submission(db, "r1", "Team A", "p", max_attempts=3, model_slug="x/a")
-    [s] = get_team_submissions(db, "r1", "Team A")
-    assert s.model_slug == "x/a"
+    insert_or_update_task(db, _task())
+    create_generation(db, "t1", "Alice", "p", generation_budget=3, model_slug="x/a")
+    [g] = get_user_generations(db, "t1", "Alice")
+    assert g.model_slug == "x/a"
 
 
-def test_choose_keeps_model_slug_on_submission(tmp_path):
+def test_gallery_keeps_model_slug_on_generation(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
-    insert_or_update_round(db, _round())
-    sid = create_submission(db, "r1", "Team A", "p", max_attempts=3, model_slug="x/a")
-    update_submission_status(db, sid, "completed", image_path="x.png")
-    choose_submission(db, sid)
-    [sub] = get_submissions_for_round(db, "r1")
-    assert sub.model_slug == "x/a"
+    insert_or_update_task(db, _task())
+    gid = create_generation(
+        db, "t1", "Alice", "p", generation_budget=3, model_slug="x/a"
+    )
+    update_generation_status(db, gid, "completed", image_path="x.png")
+    submit_to_gallery(db, gid)
+    [g] = get_gallery_generations(db, "t1")
+    assert g.model_slug == "x/a"
 
 
-def test_submission_model_slug_defaults_to_none(tmp_path):
+def test_generation_model_slug_defaults_to_none(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
-    insert_or_update_round(db, _round())
-    create_submission(db, "r1", "Team A", "p", max_attempts=3)
-    [s] = get_team_submissions(db, "r1", "Team A")
-    assert s.model_slug is None
+    insert_or_update_task(db, _task())
+    create_generation(db, "t1", "Alice", "p", generation_budget=3)
+    [g] = get_user_generations(db, "t1", "Alice")
+    assert g.model_slug is None
 
 
 # ── generation start_generation honors model_slug ───────────────────────────
@@ -208,7 +210,7 @@ def test_start_generation_uses_provided_model_slug(tmp_path, monkeypatch):
         instructor_passcode="x",
         default_replicate_model="default/model",
         db_path=tmp_path / "app.db",
-        rounds_path=tmp_path / "rounds.json",
+        tasks_path=tmp_path / "tasks.json",
         models_path=tmp_path / "models.json",
         generated_dir=tmp_path / "generated",
         assets_dir=tmp_path / "assets",
@@ -248,7 +250,7 @@ def test_start_generation_falls_back_to_default_model_when_slug_missing(
         instructor_passcode="x",
         default_replicate_model="default/model",
         db_path=tmp_path / "app.db",
-        rounds_path=tmp_path / "rounds.json",
+        tasks_path=tmp_path / "tasks.json",
         models_path=tmp_path / "models.json",
         generated_dir=tmp_path / "generated",
         assets_dir=tmp_path / "assets",
@@ -269,7 +271,7 @@ def test_start_generation_errors_when_no_model_anywhere(tmp_path):
         instructor_passcode="x",
         default_replicate_model=None,
         db_path=tmp_path / "app.db",
-        rounds_path=tmp_path / "rounds.json",
+        tasks_path=tmp_path / "tasks.json",
         models_path=tmp_path / "models.json",
         generated_dir=tmp_path / "generated",
         assets_dir=tmp_path / "assets",

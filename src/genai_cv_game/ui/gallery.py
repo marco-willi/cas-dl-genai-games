@@ -1,196 +1,98 @@
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 import streamlit as st
 
 from genai_cv_game.config import AppSettings
-from genai_cv_game.db import (
-    create_vote,
-    get_active_round,
-    get_submissions_for_round,
-    get_vote_counts,
-)
+from genai_cv_game.db import get_gallery_generations
 from genai_cv_game.model_catalog import find_model
-from genai_cv_game.models import Round, Submission
+from genai_cv_game.models import Generation, Task
 
-# Gallery is wrapped in an st.fragment so the 5s auto-refresh only reruns this
-# section. The student submission form and instructor sidebar are NOT rebuilt,
-# which means in-flight generations and typed inputs are not disturbed.
+# Gallery is wrapped in an st.fragment so the auto-refresh only reruns this
+# section, leaving the student workspace and admin sidebar untouched.
 _GALLERY_REFRESH_SECONDS = 5
 
 
+def render_gallery(settings: AppSettings, task: Task | None) -> None:
+    if task is None:
+        return
+    _render_gallery_fragment(settings, task.id)
+
+
 @st.fragment(run_every=_GALLERY_REFRESH_SECONDS)
-def render_gallery(settings: AppSettings) -> None:
-    active = get_active_round(settings.db_path)
-    if active is None:
+def _render_gallery_fragment(settings: AppSettings, task_id: str) -> None:
+    from genai_cv_game.db import get_task
+
+    task = get_task(settings.db_path, task_id)
+    if task is None:
         return
 
-    st.divider()
-    st.subheader("Gallery")
+    st.caption("Generations classmates have chosen to share for this task.")
 
-    if not active.gallery_revealed:
-        st.info(
-            "The gallery is hidden. The instructor will reveal the results "
-            "after all teams have submitted."
-        )
-        return
-
-    submissions = get_submissions_for_round(settings.db_path, active.id)
-    completed = [s for s in submissions if s.status == "completed"]
-    failed = [s for s in submissions if s.status == "failed"]
-
-    voter_name = st.session_state.get("user_name", "")
-    vote_counts = get_vote_counts(settings.db_path, active.id)
-
-    # Voting has been closed AND at least one vote was cast → show results.
-    if not active.voting_open and vote_counts:
-        _render_results(vote_counts, completed)
-        st.divider()
+    generations = get_gallery_generations(settings.db_path, task.id)
+    completed = [g for g in generations if g.status == "completed"]
 
     if not completed:
-        st.write("No submissions yet.")
-    else:
-        _render_submission_grid(completed, active, vote_counts, voter_name, settings)
+        st.write("No gallery entries yet. Be the first to share one!")
+        return
 
-    if failed:
-        _render_failed_submissions(failed)
+    _render_gallery_grid(completed, task, settings)
 
 
-def _render_submission_grid(
-    submissions: list[Submission],
-    round: Round,
-    vote_counts: dict[str, int],
-    voter_name: str,
+def _render_gallery_grid(
+    generations: list[Generation],
+    task: Task,
     settings: AppSettings,
 ) -> None:
-    # Match mode gets a 2-col grid so each card has room for target + submission
-    # side by side. Business mode keeps the denser 3-col layout.
-    grid_width = 2 if round.mode == "match" else 3
+    # Match mode gets a 2-col grid so each card has room for target + result
+    # side by side. Other modes keep the denser 3-col layout.
+    grid_width = 2 if task.mode == "match" else 3
     cols = st.columns(grid_width)
-    for i, sub in enumerate(submissions):
-        _render_submission_card(
-            sub, round, vote_counts, voter_name, settings, cols[i % grid_width]
-        )
+    for i, gen in enumerate(generations):
+        _render_gallery_card(gen, task, settings, cols[i % grid_width])
 
 
-def _render_submission_card(
-    sub: Submission,
-    round: Round,
-    vote_counts: dict[str, int],
-    voter_name: str,
+def _render_gallery_card(
+    gen: Generation,
+    task: Task,
     settings: AppSettings,
     col: st.delta_generator.DeltaGenerator,
 ) -> None:
     with col:
-        if round.mode == "match" and _target_path(round):
-            _render_match_pair(round, sub)
+        if task.mode == "match" and _target_path(task):
+            _render_match_pair(task, gen)
         else:
-            _render_submission_image(sub)
-        st.markdown(f"**{sub.team_name}**")
-        if sub.model_slug:
-            model = find_model(settings.models_path, sub.model_slug)
-            label = model.display_name if model else sub.model_slug
+            _render_generation_image(gen)
+        st.markdown(f"**{gen.user_name}**")
+        if gen.model_slug:
+            model = find_model(settings.models_path, gen.model_slug)
+            label = model.display_name if model else gen.model_slug
             st.caption(f"🧠 {label}")
-        if round.prompts_revealed:
-            st.caption(sub.prompt)
-        count = vote_counts.get(sub.id, 0)
-        if round.voting_open or count > 0:
-            label = f"Votes: **{count}**"
-            if round.voting_open:
-                label += " _(voting open)_"
-            st.markdown(label)
-        if round.voting_open:
-            _render_vote_button(sub, round, voter_name, settings)
+        st.caption(gen.prompt)
 
 
-def _target_path(round: Round) -> Path | None:
-    if not round.target_image_path:
+def _target_path(task: Task) -> Path | None:
+    if not task.target_image_path:
         return None
-    p = Path(round.target_image_path)
+    p = Path(task.target_image_path)
     return p if p.exists() else None
 
 
-def _render_match_pair(round: Round, sub: Submission) -> None:
-    target = _target_path(round)
-    target_col, sub_col = st.columns(2)
+def _render_match_pair(task: Task, gen: Generation) -> None:
+    target = _target_path(task)
+    target_col, gen_col = st.columns(2)
     with target_col:
         st.image(str(target), caption="Target", width="stretch")
-    with sub_col:
-        if sub.image_path and Path(sub.image_path).exists():
-            st.image(sub.image_path, caption="Submission", width="stretch")
+    with gen_col:
+        if gen.image_path and Path(gen.image_path).exists():
+            st.image(gen.image_path, caption="Result", width="stretch")
         else:
-            st.markdown("_(submission image unavailable)_")
+            st.markdown("_(image unavailable)_")
 
 
-def _render_submission_image(sub: Submission) -> None:
-    if sub.image_path and Path(sub.image_path).exists():
-        st.image(sub.image_path, width="stretch")
+def _render_generation_image(gen: Generation) -> None:
+    if gen.image_path and Path(gen.image_path).exists():
+        st.image(gen.image_path, width="stretch")
     else:
         st.markdown("_(image unavailable)_")
-
-
-def _render_vote_button(
-    sub: Submission, round: Round, voter_name: str, settings: AppSettings
-) -> None:
-    disabled = not voter_name
-    if st.button(
-        "Vote",
-        key=f"vote_{sub.id}",
-        disabled=disabled,
-        help="Sign in to enable voting." if disabled else None,
-    ):
-        try:
-            create_vote(settings.db_path, round.id, sub.id, voter_name)
-            st.success("Vote recorded!")
-        except sqlite3.IntegrityError:
-            st.warning("You have already voted in this round.")
-
-
-def _render_results(vote_counts: dict[str, int], submissions: list[Submission]) -> None:
-    """Show the winner + a horizontal bar of per-team vote counts.
-
-    Called only when voting is closed AND at least one vote exists.
-    Ties are reported by listing every top-scoring team.
-    """
-    rows = compute_results(vote_counts, submissions)
-    if not rows:
-        return
-
-    top_votes = rows[0][1]
-    winners = [name for name, n in rows if n == top_votes and n > 0]
-
-    st.subheader("🏆 Voting results")
-    if not winners:
-        st.info("No votes cast.")
-    elif len(winners) == 1:
-        st.success(f"Winner: **{winners[0]}** with {top_votes} vote(s)")
-    else:
-        winner_md = ", ".join(f"**{w}**" for w in winners)
-        st.success(f"Tie: {winner_md} — {top_votes} vote(s) each")
-
-    for name, n in rows:
-        col_name, col_bar = st.columns([2, 5])
-        col_name.markdown(f"**{name}**")
-        ratio = n / top_votes if top_votes else 0.0
-        col_bar.progress(ratio, text=f"{n}")
-
-
-def compute_results(
-    vote_counts: dict[str, int], submissions: list[Submission]
-) -> list[tuple[str, int]]:
-    """Map submission_id→count pairs into (team_name, count) sorted descending.
-
-    Pure helper, separated from the renderer so it can be unit-tested.
-    """
-    by_id = {s.id: s.team_name for s in submissions}
-    rows = [(by_id.get(sid, sid), n) for sid, n in vote_counts.items()]
-    rows.sort(key=lambda r: (-r[1], r[0]))
-    return rows
-
-
-def _render_failed_submissions(failed: list[Submission]) -> None:
-    with st.expander(f"Failed submissions ({len(failed)})"):
-        for s in failed:
-            st.markdown(f"- **{s.team_name}**: {s.error_message or 'Unknown error'}")

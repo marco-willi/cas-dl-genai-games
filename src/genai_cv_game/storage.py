@@ -7,21 +7,21 @@ from pathlib import Path
 
 import requests
 
-from genai_cv_game.db import get_submissions_for_round
+from genai_cv_game.db import get_gallery_generations
 
 
 def make_submission_image_path(
     generated_dir: Path,
-    round_id: str,
-    submission_id: str,
+    task_id: str,
+    generation_id: str,
 ) -> Path:
-    path = generated_dir / round_id / f"{submission_id}.png"
+    path = generated_dir / task_id / f"{generation_id}.png"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def clear_generated_dir(generated_dir: Path) -> None:
-    """Remove every per-round subdirectory under generated_dir. Top dir survives."""
+    """Remove every per-task subdirectory under generated_dir. Top dir survives."""
     if not generated_dir.exists():
         return
     for child in generated_dir.iterdir():
@@ -31,6 +31,13 @@ def clear_generated_dir(generated_dir: Path) -> None:
             # Preserve dotfiles like .gitkeep so the directory remains tracked.
             if not child.name.startswith("."):
                 child.unlink()
+
+
+def clear_task_generated_dir(generated_dir: Path, task_id: str) -> None:
+    """Remove the per-task subdirectory of generated images for one task."""
+    task_dir = generated_dir / task_id
+    if task_dir.is_dir():
+        shutil.rmtree(task_dir)
 
 
 def download_image(url: str, output_path: Path) -> Path:
@@ -43,14 +50,12 @@ def download_image(url: str, output_path: Path) -> Path:
     return output_path
 
 
-def export_submissions_csv(
-    db_path: Path, round_id: str, round_title: str = ""
-) -> bytes:
-    submissions = get_submissions_for_round(db_path, round_id)
+def export_gallery_csv(db_path: Path, task_id: str, task_title: str = "") -> bytes:
+    generations = get_gallery_generations(db_path, task_id)
     fields = [
-        "round_id",
-        "round_title",
-        "team_name",
+        "task_id",
+        "task_title",
+        "user_name",
         "prompt",
         "model_slug",
         "image_path",
@@ -61,8 +66,8 @@ def export_submissions_csv(
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
-    for s in submissions:
-        row = s.model_dump()
-        row["round_title"] = round_title
+    for g in generations:
+        row = g.model_dump()
+        row["task_title"] = task_title
         writer.writerow(row)
     return buf.getvalue().encode()

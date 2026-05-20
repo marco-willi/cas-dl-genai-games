@@ -7,21 +7,21 @@ import requests
 
 from genai_cv_game.config import AppSettings
 from genai_cv_game.db import (
-    choose_submission,
-    create_submission,
+    create_generation,
     init_db,
-    insert_or_update_round,
-    update_submission_status,
+    insert_or_update_task,
+    submit_to_gallery,
+    update_generation_status,
 )
 from genai_cv_game.generation import (
     _extract_url,
     poll_generation,
     start_generation,
 )
-from genai_cv_game.models import Round
+from genai_cv_game.models import Task
 from genai_cv_game.storage import (
     download_image,
-    export_submissions_csv,
+    export_gallery_csv,
     make_submission_image_path,
 )
 
@@ -30,8 +30,8 @@ from genai_cv_game.storage import (
 
 
 def test_make_submission_image_path(tmp_path):
-    p = make_submission_image_path(tmp_path / "generated", "r1", "sub1")
-    assert p == tmp_path / "generated" / "r1" / "sub1.png"
+    p = make_submission_image_path(tmp_path / "generated", "t1", "gen1")
+    assert p == tmp_path / "generated" / "t1" / "gen1.png"
     assert p.parent.is_dir()
 
 
@@ -67,26 +67,26 @@ def test_download_image_network_error(tmp_path, monkeypatch):
         download_image("http://example.com/img.png", tmp_path / "img.png")
 
 
-def test_export_submissions_csv(tmp_path):
+def test_export_gallery_csv(tmp_path):
     db = tmp_path / "app.db"
     init_db(db)
-    insert_or_update_round(
-        db, Round(id="r1", title="T", description="d", mode="business")
+    insert_or_update_task(
+        db, Task(id="t1", title="T", description="d", mode="business")
     )
-    s1 = create_submission(db, "r1", "Team A", "blue car", max_attempts=3)
-    s2 = create_submission(db, "r1", "Team B", "red sky", max_attempts=3)
-    update_submission_status(db, s1, "completed", image_path="generated/r1/s1.png")
-    update_submission_status(db, s2, "completed", image_path="generated/r1/s2.png")
-    choose_submission(db, s1)
-    choose_submission(db, s2)
+    g1 = create_generation(db, "t1", "Alice", "blue car", generation_budget=3)
+    g2 = create_generation(db, "t1", "Bob", "red sky", generation_budget=3)
+    update_generation_status(db, g1, "completed", image_path="generated/t1/g1.png")
+    update_generation_status(db, g2, "completed", image_path="generated/t1/g2.png")
+    submit_to_gallery(db, g1)
+    submit_to_gallery(db, g2)
 
-    data = export_submissions_csv(db, "r1", round_title="My Round")
+    data = export_gallery_csv(db, "t1", task_title="My Task")
     text = data.decode()
-    assert "round_title" in text
-    assert "My Round" in text
-    assert "team_name" in text
-    assert "Team A" in text
-    assert "Team B" in text
+    assert "task_title" in text
+    assert "My Task" in text
+    assert "user_name" in text
+    assert "Alice" in text
+    assert "Bob" in text
     assert "blue car" in text
 
 
@@ -105,7 +105,7 @@ def _settings(tmp_path, *, stub=True, token=None, model=None) -> AppSettings:
         instructor_passcode="x",
         default_replicate_model=model,
         db_path=tmp_path / "app.db",
-        rounds_path=tmp_path / "rounds.json",
+        tasks_path=tmp_path / "tasks.json",
         models_path=tmp_path / "models.json",
         generated_dir=tmp_path / "generated",
         assets_dir=tmp_path / "assets",

@@ -14,7 +14,7 @@ def test_defaults_without_env(monkeypatch):
         "INSTRUCTOR_PASSCODE",
         "DEFAULT_REPLICATE_MODEL",
         "DB_PATH",
-        "ROUNDS_PATH",
+        "TASKS_PATH",
         "GENERATED_DIR",
         "ASSETS_DIR",
         "USE_STUB_GENERATION",
@@ -29,7 +29,7 @@ def test_defaults_without_env(monkeypatch):
     assert s.app_passcode == "changeme"
     assert s.instructor_passcode == "changeme"
     assert isinstance(s.db_path, Path)
-    assert isinstance(s.rounds_path, Path)
+    assert isinstance(s.tasks_path, Path)
     assert s.use_stub_generation is False
 
 
@@ -56,24 +56,24 @@ def test_stub_flag_true(monkeypatch):
         assert load_settings().use_stub_generation is True
 
 
-def test_max_attempts_default(monkeypatch):
-    monkeypatch.delenv("MAX_ATTEMPTS", raising=False)
-    assert load_settings().max_attempts == 3
+def test_generation_budget_default(monkeypatch):
+    monkeypatch.delenv("GENERATION_BUDGET", raising=False)
+    assert load_settings().generation_budget == 3
 
 
-def test_max_attempts_override(monkeypatch):
-    monkeypatch.setenv("MAX_ATTEMPTS", "5")
-    assert load_settings().max_attempts == 5
+def test_generation_budget_override(monkeypatch):
+    monkeypatch.setenv("GENERATION_BUDGET", "5")
+    assert load_settings().generation_budget == 5
 
 
-def test_max_attempts_validation(monkeypatch):
-    monkeypatch.setenv("MAX_ATTEMPTS", "0")
+def test_generation_budget_validation(monkeypatch):
+    monkeypatch.setenv("GENERATION_BUDGET", "0")
     with pytest.raises(pydantic.ValidationError):
         load_settings()
 
 
-def test_max_attempts_malformed(monkeypatch):
-    monkeypatch.setenv("MAX_ATTEMPTS", "banana")
+def test_generation_budget_malformed(monkeypatch):
+    monkeypatch.setenv("GENERATION_BUDGET", "banana")
     with pytest.raises(pydantic.ValidationError):
         load_settings()
 
@@ -88,7 +88,7 @@ def test_ensure_directories_creates_paths(tmp_path, monkeypatch):
         instructor_passcode="x",
         default_replicate_model=None,
         db_path=tmp_path / "data" / "app.db",
-        rounds_path=tmp_path / "data" / "rounds.json",
+        tasks_path=tmp_path / "data" / "tasks.json",
         models_path=tmp_path / "data" / "models.json",
         generated_dir=tmp_path / "generated",
         assets_dir=tmp_path / "assets",

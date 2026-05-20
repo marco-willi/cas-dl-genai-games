@@ -1,13 +1,18 @@
 # Generative AI CV Classroom Game
 
-An interactive multi-team web app for one-day courses on generative AI in computer vision.
-Students compete in two game modes using the Replicate image-generation API:
+An interactive web app for one-day courses on generative AI in computer vision.
+Students freely browse a set of tasks and use the Replicate image-generation API
+to create images. Task modes:
 
 - **Business** — create a hero image for a fictional business brief
 - **Match** — recreate a target image using text prompting only
+- **Edit** — transform a source image with a prompt
+- **Compose** — place a cut-out object into a generated scene
 
-Up to ~10 teams submit prompts, generate images, and vote on results. The instructor
-controls pacing from a password-protected sidebar.
+Each student picks any available task, has a fixed budget of 3 generations per
+task, and may share one result into that task's public gallery. An admin panel
+(password-protected sidebar) controls a global generation on/off switch, which
+tasks are available, and gallery resets.
 
 ---
 
@@ -24,7 +29,7 @@ poetry install --with dev
 
 # Copy and fill in environment variables
 cp .env.example .env
-# edit .env — at minimum set REPLICATE_API_TOKEN and INSTRUCTOR_PASSCODE
+# edit .env — at minimum set REPLICATE_API_TOKEN and INSTRUCTOR_PASSCODE (admin passcode)
 
 # Run the app
 poetry run streamlit run app.py
@@ -34,7 +39,7 @@ poetry run streamlit run app.py
 The app opens at http://localhost:8501.
 
 > **No API key?** Set `USE_STUB_GENERATION=true` in `.env` to run without
-> Replicate. A grey placeholder image is returned for every submission.
+> Replicate. A grey placeholder image is returned for every generation.
 
 ---
 
@@ -45,25 +50,26 @@ Copy `.env.example` to `.env` and set values before running.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `REPLICATE_API_TOKEN` | Yes* | — | Replicate API token. Not needed if `USE_STUB_GENERATION=true`. |
-| `INSTRUCTOR_PASSCODE` | Yes | `changeme` | Passcode for the instructor sidebar. Change before classroom use. |
+| `INSTRUCTOR_PASSCODE` | Yes | `changeme` | Passcode for the admin sidebar. Change before classroom use. |
 | `APP_TITLE` | No | `Generative AI CV Classroom Game` | Browser tab title and app heading. |
 | `DEFAULT_REPLICATE_MODEL` | Yes* | — | Replicate model ref, e.g. `google/imagen-4-fast`. Not needed in stub mode. |
 | `DB_PATH` | No | `data/app.db` | SQLite database path (created automatically). |
-| `ROUNDS_PATH` | No | `data/rounds.json` | Path to round definitions file. |
+| `TASKS_PATH` | No | `data/tasks.json` | Path to task definitions file. |
 | `GENERATED_DIR` | No | `generated` | Directory where generated images are saved. |
 | `ASSETS_DIR` | No | `assets` | Directory for target images and placeholder. |
 | `USE_STUB_GENERATION` | No | `false` | Set to `true` to skip Replicate and return a placeholder image. |
+| `GENERATION_BUDGET` | No | `3` | Number of generations each student gets per task. |
 
 ---
 
-## Adding Rounds
+## Adding Tasks
 
-Edit `data/rounds.json`. Each round is a JSON object:
+Edit `data/tasks.json`. Each task is a JSON object:
 
 ```json
 {
-  "id": "my_round_001",
-  "title": "My Round Title",
+  "id": "my_task_001",
+  "title": "My Task Title",
   "description": "Instructions shown to students.",
   "mode": "business",
   "target_image_path": null
@@ -75,20 +81,20 @@ Edit `data/rounds.json`. Each round is a JSON object:
 | Field | Values | Notes |
 |---|---|---|
 | `id` | unique string | Used as a directory name; keep it slug-safe |
-| `title` | string | Shown as the round heading |
+| `title` | string | Shown as the task heading and in the task picker |
 | `description` | string | Shown below the heading |
 | `mode` | `"business"`, `"match"`, `"edit"`, or `"compose"` | Controls what reference imagery is shown and whether images are sent to the model |
 | `target_image_path` | path string or `null` | Required for `match` mode; ignored for the others |
 | `input_image_paths` | list of path strings | Required for `edit` (exactly 1) and `compose` (≥ 1); ignored for `business` / `match` |
 
-Rounds are synced into the database on every app start. Adding or renaming a round
-takes effect on the next restart; instructor state (active, open, revealed) is preserved.
+Tasks are synced into the database on every app start. Adding or renaming a task
+takes effect on the next restart; admin availability choices are preserved.
 
 ---
 
-## Edit / Compose rounds
+## Edit / Compose tasks
 
-Two round modes feed an input image to the model and require a model marked with
+Two task modes feed an input image to the model and require a model marked with
 `supports_image_input: true` in `data/models.json` (currently
 `google/nano-banana-2`).
 
@@ -99,16 +105,16 @@ Two round modes feed an input image to the model and require a model marked with
 
 **Setup:**
 
-1. Drop the input file(s) into the matching directory, named after the round id:
+1. Drop the input file(s) into the matching directory, named after the task id:
 
    ```
-   assets/input_images/edit/<round_id>.jpg
-   assets/input_images/compose/<round_id>.png   # transparent PNG works best
+   assets/input_images/edit/<task_id>.jpg
+   assets/input_images/compose/<task_id>.png   # transparent PNG works best
    ```
 
-   Keep each file under ~1.5 MB so per-attempt uploads stay snappy.
+   Keep each file under ~1.5 MB so per-generation uploads stay snappy.
 
-2. Reference them from `data/rounds.json`:
+2. Reference them from `data/tasks.json`:
 
    ```json
    {
@@ -120,11 +126,11 @@ Two round modes feed an input image to the model and require a model marked with
    }
    ```
 
-3. Restart the app. The round will refuse to load until every referenced file
+3. Restart the app. The task will refuse to load until every referenced file
    exists on disk — the error message names the missing path.
 
 The student model dropdown is filtered to image-input-capable models for these
-rounds, and `nano-banana-2` is the recommended default.
+tasks, and `nano-banana-2` is the recommended default.
 
 ---
 
@@ -136,7 +142,7 @@ rounds, and `nano-banana-2` is the recommended default.
    assets/target_images/my_scene.jpg
    ```
 
-2. Reference it in `data/rounds.json`:
+2. Reference it in `data/tasks.json`:
 
    ```json
    {
@@ -153,42 +159,43 @@ Any common image format (JPEG, PNG, WebP) works. Keep images under 2 MB for fast
 
 ---
 
-## Instructor Workflow
+## Admin Workflow
 
-1. Open the app and enter the instructor passcode in the sidebar.
-2. Select the active round from the **Active Round** dropdown.
-3. Toggle **Submissions open** → students can now submit prompts.
-4. Watch the **Submissions** counter in the sidebar until all teams have submitted.
-5. Toggle **Submissions open** off to close the round.
-6. Toggle **Gallery revealed** → all generated images appear on screen.
-7. Toggle **Prompts revealed** → the prompt used by each team is shown under their image.
-8. Toggle **Voting open** → students can vote for their favourite image.
-9. Toggle **Voting open** off to close voting; vote counts remain visible.
-10. Click **Download submissions CSV** to export results.
-11. To run another round: select the next round, check the **Reset** confirmation, click **Reset**, then repeat from step 3.
+1. Open the app and enter the admin passcode in the sidebar.
+2. **Generation API** — toggle the global on/off switch. When off, students
+   cannot start new generations (gallery viewing is unaffected).
+3. **Task availability** — toggle which tasks appear in the student task picker.
+4. **Gallery resets** — pick a task and reset it (deletes its generations and
+   image files, freeing students' budgets), or reset ALL galleries at once.
+5. **Export** — pick a task and download its gallery as CSV.
+6. **Danger zone** — delete the entire database and all generated images.
 
 ---
 
 ## Student Workflow
 
-1. Open the app URL provided by the instructor.
-2. Wait for the instructor to open submissions — a form appears when the round is active.
-3. Enter your **team name** and write a **prompt** describing the image you want.
+1. Open the app URL provided by the instructor and sign in with your name.
+2. Choose a task from the **Choose a task** dropdown.
+3. Write a **prompt** describing the image you want, pick a model, and click
+   **Generate**.
    - For *Business* mode: create an image matching the brief in the description.
    - For *Match* mode: try to recreate the target image shown above the form.
-     Include subject, composition, style, lighting, and camera perspective.
-4. Click **Generate**. A spinner appears while the image is being created.
-5. Your generated image is shown when complete.
-6. When the instructor reveals the gallery, all teams' images appear.
-7. When voting opens, enter your team name and click **Vote** on your favourite image.
+   - For *Edit* / *Compose* mode: transform or build a scene around the input image.
+4. You have **3 generations per task**. A spinner appears while each image is
+   created; failed attempts can be discarded to free a slot.
+5. Click **Show in gallery** on your favourite result to share it. Only one of
+   your results per task can be in the gallery at a time.
+6. The gallery shows every classmate's shared result for the task and refreshes
+   automatically.
 
 ---
 
 ## Troubleshooting
 
-**App starts but shows "No active round"**
-The database may be empty or all rounds were reset. Restart the app — rounds are
-synced from `data/rounds.json` on startup and the first round is activated automatically.
+**App starts but shows "No tasks are available"**
+All tasks may be toggled off in the admin panel, or the database is empty.
+Tasks are synced from `data/tasks.json` on startup; check availability in the
+admin sidebar.
 
 **Generation fails with "Replicate API token is not configured"**
 Set `REPLICATE_API_TOKEN` in `.env` or set `USE_STUB_GENERATION=true` for offline use.
@@ -198,10 +205,13 @@ The Replicate API returned an error. Check your token, model name, and Replicate
 quota. Try a different model ref in `DEFAULT_REPLICATE_MODEL`.
 
 **Target image shows "Target image is not available"**
-The file path in `rounds.json` does not match an existing file. Check
+The file path in `tasks.json` does not match an existing file. Check
 `assets/target_images/` and ensure the path matches exactly (case-sensitive on Linux).
 
-**Gallery doesn't show new submissions**
+**Students see "Image generation is currently paused"**
+The global generation API switch is off. Enable it in the admin sidebar.
+
+**Gallery doesn't show new entries**
 The gallery auto-refreshes every 5 seconds. Wait a moment or reload the page.
 
 **Pre-commit hooks fail on first run**

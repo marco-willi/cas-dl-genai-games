@@ -16,12 +16,12 @@ class AppSettings(BaseModel):
     instructor_passcode: str
     default_replicate_model: str | None
     db_path: Path
-    rounds_path: Path
+    tasks_path: Path
     models_path: Path
     generated_dir: Path
     assets_dir: Path
     use_stub_generation: bool
-    max_attempts: int = Field(default=3, ge=1, le=20)
+    generation_budget: int = Field(default=3, ge=1, le=20)
 
 
 def load_settings() -> AppSettings:
@@ -32,15 +32,15 @@ def load_settings() -> AppSettings:
         "instructor_passcode": os.getenv("INSTRUCTOR_PASSCODE", "changeme"),
         "default_replicate_model": os.getenv("DEFAULT_REPLICATE_MODEL") or None,
         "db_path": Path(os.getenv("DB_PATH", "data/app.db")),
-        "rounds_path": Path(os.getenv("ROUNDS_PATH", "data/rounds.json")),
+        "tasks_path": Path(os.getenv("TASKS_PATH", "data/tasks.json")),
         "models_path": Path(os.getenv("MODELS_PATH", "data/models.json")),
         "generated_dir": Path(os.getenv("GENERATED_DIR", "generated")),
         "assets_dir": Path(os.getenv("ASSETS_DIR", "assets")),
         "use_stub_generation": os.getenv("USE_STUB_GENERATION", "false").lower()
         == "true",
     }
-    if (raw_max := os.getenv("MAX_ATTEMPTS")) is not None:
-        raw["max_attempts"] = raw_max
+    if (raw_budget := os.getenv("GENERATION_BUDGET")) is not None:
+        raw["generation_budget"] = raw_budget
     return AppSettings.model_validate(raw)
 
 

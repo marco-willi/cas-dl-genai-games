@@ -7,59 +7,54 @@ import streamlit as st
 
 from genai_cv_game.config import AppSettings
 from genai_cv_game.db import (
-    DuplicateSubmissionError,
-    MaxAttemptsReachedError,
-    choose_submission,
-    create_submission,
-    delete_submission,
-    get_active_round,
-    get_team_submissions,
-    set_submission_prediction,
-    update_submission_status,
+    BudgetReachedError,
+    create_generation,
+    delete_generation,
+    get_user_generations,
+    is_api_enabled,
+    remove_from_gallery,
+    set_generation_prediction,
+    submit_to_gallery,
+    update_generation_status,
 )
 from genai_cv_game.generation import poll_generation, start_generation
 from genai_cv_game.model_catalog import find_model, load_enabled_models
-from genai_cv_game.models import ModelEntry, Round, Submission
+from genai_cv_game.models import Generation, ModelEntry, Task
+from genai_cv_game.ui.gallery import render_gallery
 
-# Max time a draft may sit in 'pending' before we declare the generation
-# dead and let the team retry.
+# Max time a generation may sit in 'pending' before we declare it dead.
 _PENDING_TIMEOUT_SECONDS = 180
 # How often the "still generating" block re-polls the prediction.
 _STUDENT_POLL_SECONDS = 3
-# Round modes that pass source/cut-out images to the image-generation model.
+# Task modes that pass source/cut-out images to the image-generation model.
 _IMAGE_INPUT_MODES = frozenset({"edit", "compose"})
 
 
-def render_student_view(settings: AppSettings) -> None:
-    active = get_active_round(settings.db_path)
+def render_task_page(settings: AppSettings, task: Task) -> None:
+    """Render one task's page: a Generate tab and a Gallery tab."""
+    tab_generate, tab_gallery = st.tabs(["Generate", "Gallery"])
 
-    if active is None:
-        st.info("No active round. Wait for the instructor.")
-        return
+    with tab_generate:
+        st.header(task.title)
+        st.write(task.description)
 
-    st.header(active.title)
-    st.write(active.description)
+        if task.mode == "match":
+            _render_target_image(task)
+        elif task.mode in _IMAGE_INPUT_MODES:
+            _render_input_images(task)
 
-    if active.mode == "match":
-        _render_target_image(active)
-    elif active.mode in _IMAGE_INPUT_MODES:
-        _render_input_images(active)
+        _render_user_workspace(task, settings)
 
-    if not active.submissions_open:
-        st.warning(
-            "Submissions are currently closed. Wait for the instructor to open the round."
-        )
-        return
-
-    _render_team_workspace(active, settings)
+    with tab_gallery:
+        render_gallery(settings, task)
 
 
-# ── Round-level helpers ─────────────────────────────────────────────────────
+# ── Task-level helpers ───────────────────────────────────────────────────────
 
 
-def _render_target_image(round: Round) -> None:
-    if round.target_image_path:
-        path = Path(round.target_image_path)
+def _render_target_image(task: Task) -> None:
+    if task.target_image_path:
+        path = Path(task.target_image_path)
         if path.exists():
             st.image(str(path), caption="Target image — recreate this with your prompt")
             st.caption(
@@ -71,12 +66,12 @@ def _render_target_image(round: Round) -> None:
             st.warning("Target image is not available.")
 
 
-def _render_input_images(round: Round) -> None:
-    if not round.input_image_paths:
-        st.warning("This round has no input images configured.")
+def _render_input_images(task: Task) -> None:
+    if not task.input_image_paths:
+        st.warning("This task has no input images configured.")
         return
 
-    if round.mode == "edit":
+    if task.mode == "edit":
         caption = "Source image — edit this with your prompt."
         tip = (
             "Describe the change you want to apply. Be specific about what should "
@@ -91,8 +86,8 @@ def _render_input_images(round: Round) -> None:
             "should remain the visual hero of the image."
         )
 
-    missing = [p for p in round.input_image_paths if not Path(p).exists()]
-    available = [p for p in round.input_image_paths if Path(p).exists()]
+    missing = [p for p in task.input_image_paths if not Path(p).exists()]
+    available = [p for p in task.input_image_paths if Path(p).exists()]
 
     if available:
         cols = st.columns(min(3, len(available)))
@@ -106,147 +101,145 @@ def _render_input_images(round: Round) -> None:
         )
 
 
-# ── Team workspace (top-level form) ─────────────────────────────────────────
+# ── User workspace ───────────────────────────────────────────────────────────
 
 
-def _render_team_workspace(round: Round, settings: AppSettings) -> None:
-    team_name = st.session_state["user_name"]
+def _render_user_workspace(task: Task, settings: AppSettings) -> None:
+    user_name = st.session_state["user_name"]
 
-    team_rows = get_team_submissions(settings.db_path, round.id, team_name)
-    chosen = next((s for s in team_rows if s.is_chosen), None)
-    if chosen:
-        _render_submitted(chosen)
-        return
+    rows = get_user_generations(settings.db_path, task.id, user_name)
+    generations = [_reconcile_generation(g, settings) for g in rows]
+    has_in_flight = any(g.status == "pending" for g in generations)
+    live_count = sum(1 for g in generations if g.status != "failed")
 
-    drafts = [_reconcile_submission(s, settings) for s in team_rows]
-    has_in_flight = any(d.status == "pending" for d in drafts)
-
-    if drafts:
-        st.subheader(f"Your candidates ({len(drafts)} / {settings.max_attempts})")
-        _render_drafts_grid(drafts, settings, locked=has_in_flight)
+    if generations:
+        st.subheader(f"Your generations ({live_count} / {settings.generation_budget})")
+        _render_generations_grid(generations, settings, locked=has_in_flight)
 
     if has_in_flight:
-        _render_in_flight_notice(round, team_name, settings)
+        _render_in_flight_notice(task, user_name, settings)
         return
 
-    if len(drafts) >= settings.max_attempts:
+    if not is_api_enabled(settings.db_path):
+        st.info("Image generation is currently paused by the admin.")
+        return
+
+    if live_count >= settings.generation_budget:
         st.warning(
-            f"You have used all {settings.max_attempts} attempts. Pick one of "
-            "your candidates above to submit, or clear an attempt to free a slot."
+            f"You have used all {settings.generation_budget} generations for this "
+            "task. Pick one of your results to show in the gallery, or discard a "
+            "failed attempt to free a slot."
         )
         return
 
-    _render_prompt_form(round, team_name, drafts, settings)
+    _render_prompt_form(task, user_name, generations, settings)
 
 
-def _render_submitted(submission: Submission) -> None:
-    st.success("You have submitted this round.")
-    if submission.image_path and Path(submission.image_path).exists():
-        st.image(submission.image_path)
-    st.caption(f"Prompt: {submission.prompt}")
+# ── Generation cards ─────────────────────────────────────────────────────────
 
 
-# ── Draft rendering ─────────────────────────────────────────────────────────
-
-
-def _render_drafts_grid(
-    drafts: list[Submission], settings: AppSettings, locked: bool
+def _render_generations_grid(
+    generations: list[Generation], settings: AppSettings, locked: bool
 ) -> None:
-    cols = st.columns(min(3, max(1, len(drafts))))
-    for i, draft in enumerate(drafts):
+    cols = st.columns(min(3, max(1, len(generations))))
+    for i, gen in enumerate(generations):
         with cols[i % len(cols)]:
-            _render_draft_card(draft, settings, locked=locked)
+            _render_generation_card(gen, settings, locked=locked)
 
 
-def _render_draft_card(draft: Submission, settings: AppSettings, locked: bool) -> None:
-    if draft.status == "completed" and draft.image_path:
-        st.image(draft.image_path, width="stretch")
-    elif draft.status == "pending":
+def _render_generation_card(
+    gen: Generation, settings: AppSettings, locked: bool
+) -> None:
+    if gen.status == "completed" and gen.image_path:
+        st.image(gen.image_path, width="stretch")
+    elif gen.status == "pending":
         st.markdown("⏳ _generating…_")
     else:  # failed
         st.markdown("⚠️ _failed_")
 
-    if draft.model_slug:
-        st.caption(f"🧠 {_pretty_model(draft.model_slug, settings)}")
-    st.caption(draft.prompt)
+    if gen.model_slug:
+        st.caption(f"🧠 {_pretty_model(gen.model_slug, settings)}")
+    st.caption(gen.prompt)
 
-    if draft.status == "failed":
-        st.error(draft.error_message or "Generation failed.")
-        if st.button("Discard", key=f"discard_{draft.id}"):
-            delete_submission(settings.db_path, draft.id)
+    if gen.status == "failed":
+        st.error(gen.error_message or "Generation failed.")
+        if st.button("Discard", key=f"discard_{gen.id}"):
+            delete_generation(settings.db_path, gen.id)
             st.rerun()
         return
 
-    if draft.status == "completed":
+    if gen.status != "completed":
+        return
+
+    if gen.in_gallery:
+        st.success("Shown in the gallery")
         if st.button(
-            "Use this",
-            key=f"use_{draft.id}",
+            "Remove from gallery",
+            key=f"remove_{gen.id}",
+            disabled=locked,
+        ):
+            remove_from_gallery(settings.db_path, gen.id)
+            st.rerun()
+    else:
+        if st.button(
+            "Show in gallery",
+            key=f"show_{gen.id}",
             type="primary",
             disabled=locked,
-            help="Submit this candidate to the gallery." if not locked else None,
+            help="Make this your gallery entry for the task." if not locked else None,
         ):
-            _handle_use_this(draft, settings)
-        if st.button(
-            "Discard",
-            key=f"discard_{draft.id}",
-            disabled=locked,
-            help="Free this attempt slot." if not locked else None,
-        ):
-            delete_submission(settings.db_path, draft.id)
-            st.rerun()
+            _handle_show_in_gallery(gen, settings)
 
 
-def _handle_use_this(draft: Submission, settings: AppSettings) -> None:
+def _handle_show_in_gallery(gen: Generation, settings: AppSettings) -> None:
     try:
-        choose_submission(settings.db_path, draft.id)
-    except DuplicateSubmissionError as e:
-        st.warning(str(e))
-        return
+        submit_to_gallery(settings.db_path, gen.id)
     except ValueError as e:
         st.error(str(e))
         return
-    st.success("Submitted to the gallery!")
+    st.success("Added to the gallery!")
     st.rerun()
 
 
-# ── Prompt form (next attempt) ──────────────────────────────────────────────
+# ── Prompt form (next generation) ────────────────────────────────────────────
 
 
 def _render_prompt_form(
-    round: Round, team_name: str, drafts: list[Submission], settings: AppSettings
+    task: Task, user_name: str, generations: list[Generation], settings: AppSettings
 ) -> None:
-    remaining = settings.max_attempts - len(drafts)
-    next_num = len(drafts) + 1
-    default_prompt = drafts[-1].prompt if drafts else ""
-    default_model_slug = drafts[-1].model_slug if drafts else None
+    live_count = sum(1 for g in generations if g.status != "failed")
+    remaining = settings.generation_budget - live_count
+    next_num = live_count + 1
+    default_prompt = generations[-1].prompt if generations else ""
+    default_model_slug = generations[-1].model_slug if generations else None
 
-    st.subheader(f"Attempt {next_num} of {settings.max_attempts}")
+    st.subheader(f"Generation {next_num} of {settings.generation_budget}")
     st.caption(
-        f"{remaining} attempt{'s' if remaining != 1 else ''} remaining. "
+        f"{remaining} generation{'s' if remaining != 1 else ''} remaining. "
         "Tweak the prompt or change the model to try a new variation."
     )
 
     model = _render_model_selector(
-        round, settings, next_num, preferred_slug=default_model_slug
+        task, settings, next_num, preferred_slug=default_model_slug
     )
     _render_prompt_tips()
     prompt = st.text_area(
         "Your prompt",
         value=default_prompt,
-        key=f"prompt_{round.id}_{next_num}",
+        key=f"prompt_{task.id}_{next_num}",
     )
 
     disabled = (
         not prompt.strip()
         or model is None
-        or (round.mode in _IMAGE_INPUT_MODES and not _resolve_input_image_paths(round))
+        or (task.mode in _IMAGE_INPUT_MODES and not _resolve_input_image_paths(task))
     )
-    if st.button("Generate", disabled=disabled, key=f"gen_{round.id}_{next_num}"):
-        _handle_new_attempt(round, team_name, prompt.strip(), model, settings)
+    if st.button("Generate", disabled=disabled, key=f"gen_{task.id}_{next_num}"):
+        _handle_new_generation(task, user_name, prompt.strip(), model, settings)
 
 
 def _render_model_selector(
-    round: Round,
+    task: Task,
     settings: AppSettings,
     next_num: int,
     preferred_slug: str | None,
@@ -258,13 +251,13 @@ def _render_model_selector(
     disables Generate. In stub mode we return None silently (stub ignores it).
     """
     enabled = load_enabled_models(settings.models_path)
-    if round.mode in _IMAGE_INPUT_MODES:
+    if task.mode in _IMAGE_INPUT_MODES:
         enabled = [m for m in enabled if m.supports_image_input]
     if not enabled:
-        if round.mode in _IMAGE_INPUT_MODES:
+        if task.mode in _IMAGE_INPUT_MODES:
             st.error(
-                "This round needs an image-input model, but none are enabled. "
-                "Ask the instructor to enable a model with "
+                "This task needs an image-input model, but none are enabled. "
+                "Ask the admin to enable a model with "
                 "`supports_image_input: true` in `data/models.json`."
             )
             return None
@@ -272,8 +265,8 @@ def _render_model_selector(
             st.caption("Using the default model (no catalog configured).")
             return None
         st.error(
-            "No image generation models are enabled. Ask the instructor to "
-            "enable a model in the sidebar."
+            "No image generation models are enabled. Ask the admin to "
+            "enable a model in `data/models.json`."
         )
         return None
 
@@ -291,7 +284,7 @@ def _render_model_selector(
             m.display_name for m in enabled if m.slug == slug
         ),
         index=default_index,
-        key=f"model_{round.id}_{next_num}",
+        key=f"model_{task.id}_{next_num}",
     )
     chosen = next(m for m in enabled if m.slug == chosen_slug)
     if chosen.description:
@@ -299,59 +292,56 @@ def _render_model_selector(
     return chosen
 
 
-def _handle_new_attempt(
-    round: Round,
-    team_name: str,
+def _handle_new_generation(
+    task: Task,
+    user_name: str,
     prompt: str,
     model: ModelEntry | None,
     settings: AppSettings,
 ) -> None:
     slug = model.slug if model else None
     image_paths: list[Path] | None = None
-    if round.mode in _IMAGE_INPUT_MODES:
-        image_paths = _resolve_input_image_paths(round)
+    if task.mode in _IMAGE_INPUT_MODES:
+        image_paths = _resolve_input_image_paths(task)
         if not image_paths:
             st.error(
-                "This round's input images are not available on disk. "
-                "Ask the instructor to add them to `assets/input_images/`."
+                "This task's input images are not available on disk. "
+                "Ask the admin to add them to `assets/input_images/`."
             )
             return
     try:
-        submission_id = create_submission(
+        generation_id = create_generation(
             settings.db_path,
-            round.id,
-            team_name,
+            task.id,
+            user_name,
             prompt,
-            settings.max_attempts,
+            settings.generation_budget,
             model_slug=slug,
         )
-    except MaxAttemptsReachedError as e:
-        st.warning(str(e))
-        return
-    except DuplicateSubmissionError as e:
+    except BudgetReachedError as e:
         st.warning(str(e))
         return
     try:
         prediction_id = start_generation(
             prompt,
-            round.id,
-            submission_id,
+            task.id,
+            generation_id,
             settings,
             model_slug=slug,
             image_input_paths=image_paths,
         )
-        set_submission_prediction(settings.db_path, submission_id, prediction_id)
+        set_generation_prediction(settings.db_path, generation_id, prediction_id)
     except Exception as e:
-        update_submission_status(
-            settings.db_path, submission_id, "failed", error_message=str(e)
+        update_generation_status(
+            settings.db_path, generation_id, "failed", error_message=str(e)
         )
         st.error(f"Could not start generation: {e}")
         return
     st.rerun()
 
 
-def _resolve_input_image_paths(round: Round) -> list[Path]:
-    return [Path(p) for p in round.input_image_paths if Path(p).exists()]
+def _resolve_input_image_paths(task: Task) -> list[Path]:
+    return [Path(p) for p in task.input_image_paths if Path(p).exists()]
 
 
 # ── In-flight polling (auto-refresh while pending) ──────────────────────────
@@ -359,73 +349,65 @@ def _resolve_input_image_paths(round: Round) -> list[Path]:
 
 @st.fragment(run_every=_STUDENT_POLL_SECONDS)
 def _render_in_flight_notice(
-    round: Round, team_name: str, settings: AppSettings
+    task: Task, user_name: str, settings: AppSettings
 ) -> None:
-    drafts = [
-        s
-        for s in get_team_submissions(settings.db_path, round.id, team_name)
-        if not s.is_chosen
-    ]
+    rows = get_user_generations(settings.db_path, task.id, user_name)
     still_pending = any(
-        _reconcile_submission(d, settings).status == "pending" for d in drafts
+        _reconcile_generation(g, settings).status == "pending" for g in rows
     )
 
     if still_pending:
-        st.info("A candidate is still generating. This usually takes 10–60 seconds…")
+        st.info("A generation is still running. This usually takes 10–60 seconds…")
         return
     st.rerun(scope="app")
 
 
-def _reconcile_submission(draft: Submission, settings: AppSettings) -> Submission:
-    """Resolve a pending draft by polling or recovering from disk."""
-    if draft.status != "pending":
-        return draft
+def _reconcile_generation(gen: Generation, settings: AppSettings) -> Generation:
+    """Resolve a pending generation by polling or recovering from disk."""
+    if gen.status != "pending":
+        return gen
 
-    if draft.prediction_id:
-        result = poll_generation(
-            draft.prediction_id, draft.round_id, draft.id, settings
-        )
+    if gen.prediction_id:
+        result = poll_generation(gen.prediction_id, gen.task_id, gen.id, settings)
         if result.status == "succeeded" and result.image_path:
-            update_submission_status(
+            update_generation_status(
                 settings.db_path,
-                draft.id,
+                gen.id,
                 "completed",
                 image_path=result.image_path,
             )
-            return draft.model_copy(
+            return gen.model_copy(
                 update={"status": "completed", "image_path": result.image_path}
             )
         if result.status == "failed":
             msg = result.error or "Generation failed."
-            update_submission_status(
-                settings.db_path, draft.id, "failed", error_message=msg
+            update_generation_status(
+                settings.db_path, gen.id, "failed", error_message=msg
             )
-            return draft.model_copy(update={"status": "failed", "error_message": msg})
+            return gen.model_copy(update={"status": "failed", "error_message": msg})
     else:
-        image_path = Path(settings.generated_dir) / draft.round_id / f"{draft.id}.png"
+        image_path = Path(settings.generated_dir) / gen.task_id / f"{gen.id}.png"
         if image_path.exists():
-            update_submission_status(
+            update_generation_status(
                 settings.db_path,
-                draft.id,
+                gen.id,
                 "completed",
                 image_path=str(image_path),
             )
-            return draft.model_copy(
+            return gen.model_copy(
                 update={"status": "completed", "image_path": str(image_path)}
             )
 
-    if _pending_age_seconds(draft) > _PENDING_TIMEOUT_SECONDS:
+    if _pending_age_seconds(gen) > _PENDING_TIMEOUT_SECONDS:
         msg = "Generation timed out. Please try again."
-        update_submission_status(
-            settings.db_path, draft.id, "failed", error_message=msg
-        )
-        return draft.model_copy(update={"status": "failed", "error_message": msg})
-    return draft
+        update_generation_status(settings.db_path, gen.id, "failed", error_message=msg)
+        return gen.model_copy(update={"status": "failed", "error_message": msg})
+    return gen
 
 
-def _pending_age_seconds(draft: Submission) -> float:
+def _pending_age_seconds(gen: Generation) -> float:
     try:
-        updated = datetime.fromisoformat(draft.updated_at)
+        updated = datetime.fromisoformat(gen.updated_at)
     except ValueError:
         return 0.0
     if updated.tzinfo is None:

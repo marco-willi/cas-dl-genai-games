@@ -37,8 +37,8 @@ class GenerationResult:
 
 def start_generation(
     prompt: str,
-    round_id: str,
-    submission_id: str,
+    task_id: str,
+    generation_id: str,
     settings: AppSettings,
     model_slug: str | None = None,
     image_input_paths: list[Path] | None = None,
@@ -46,18 +46,18 @@ def start_generation(
     """Kick off an image generation. Returns a prediction id (or stub sentinel).
 
     Never blocks waiting for the result. Caller persists the returned id on the
-    submission row and later passes it to `poll_generation`.
+    generation row and later passes it to `poll_generation`.
 
     `model_slug` selects which Replicate model to use. If omitted, falls back
     to `settings.default_replicate_model`. Stub mode ignores it.
 
     `image_input_paths`, when non-empty, are opened in binary mode and passed
-    as the `image_input` field — used by edit/compose rounds that feed source
+    as the `image_input` field — used by edit/compose tasks that feed source
     or cut-out images to the model. The replicate client uploads the handles.
     """
     if settings.use_stub_generation:
-        _generate_stub(round_id, submission_id, settings)
-        return f"{_STUB_PREFIX}{submission_id}"
+        _generate_stub(task_id, generation_id, settings)
+        return f"{_STUB_PREFIX}{generation_id}"
 
     if not settings.replicate_api_token:
         raise RuntimeError("Replicate API token is not configured.")
@@ -88,8 +88,8 @@ def start_generation(
 
 def poll_generation(
     prediction_id: str,
-    round_id: str,
-    submission_id: str,
+    task_id: str,
+    generation_id: str,
     settings: AppSettings,
 ) -> GenerationResult:
     """Check the status of a running prediction.
@@ -98,7 +98,7 @@ def poll_generation(
     (it should have been written synchronously by `start_generation`).
     """
     image_path = make_submission_image_path(
-        settings.generated_dir, round_id, submission_id
+        settings.generated_dir, task_id, generation_id
     )
 
     if prediction_id.startswith(_STUB_PREFIX):
@@ -142,9 +142,9 @@ def poll_generation(
     )
 
 
-def _generate_stub(round_id: str, submission_id: str, settings: AppSettings) -> Path:
+def _generate_stub(task_id: str, generation_id: str, settings: AppSettings) -> Path:
     placeholder = settings.assets_dir / "placeholder" / "stub.png"
-    dest = make_submission_image_path(settings.generated_dir, round_id, submission_id)
+    dest = make_submission_image_path(settings.generated_dir, task_id, generation_id)
     shutil.copy(placeholder, dest)
     return dest
 

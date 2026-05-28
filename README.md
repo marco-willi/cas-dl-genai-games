@@ -8,6 +8,7 @@ to create images. Task modes:
 - **Match** — recreate a target image using text prompting only
 - **Edit** — transform a source image with a prompt
 - **Compose** — place a cut-out object into a generated scene
+- **Explore** — upload your own image and edit it with a text instruction (open-ended)
 
 Each student picks any available task, has a fixed budget of 3 generations per
 task, and may share one result into that task's public gallery. An admin panel
@@ -83,25 +84,29 @@ Edit `data/tasks.json`. Each task is a JSON object:
 | `id` | unique string | Used as a directory name; keep it slug-safe |
 | `title` | string | Shown as the task heading and in the task picker |
 | `description` | string | Shown below the heading |
-| `mode` | `"business"`, `"match"`, `"edit"`, or `"compose"` | Controls what reference imagery is shown and whether images are sent to the model |
+| `mode` | `"business"`, `"match"`, `"edit"`, `"compose"`, or `"explore"` | Controls what reference imagery is shown and whether images are sent to the model |
 | `target_image_path` | path string or `null` | Required for `match` mode; ignored for the others |
-| `input_image_paths` | list of path strings | Required for `edit` (exactly 1) and `compose` (≥ 1); ignored for `business` / `match` |
+| `input_image_paths` | list of path strings | Required for `edit` (exactly 1) and `compose` (≥ 1); ignored for `business` / `match` / `explore` |
 
 Tasks are synced into the database on every app start. Adding or renaming a task
 takes effect on the next restart; admin availability choices are preserved.
 
 ---
 
-## Edit / Compose tasks
+## Edit / Compose / Explore tasks
 
-Two task modes feed an input image to the model and require a model marked with
-`supports_image_input: true` in `data/models.json` (currently
-`google/nano-banana-2`).
+These task modes feed an input image to the model and require a model marked
+with `supports_image_input: true` in `data/models.json` (currently
+`google/nano-banana-2`, `black-forest-labs/flux-2-flex`, and
+`bytedance/seedream-5-lite`).
 
 - **`edit`** — shows the student one source image and asks them to write a
   prompt that transforms it (e.g. relight, change weather, restyle).
 - **`compose`** — shows the student a cut-out object and asks them to write a
   prompt for a scene built around that object.
+- **`explore`** — the student uploads their own image and edits it with a text
+  instruction. No `input_image_paths` are declared (the upload is the source);
+  the uploaded file is saved alongside the generation under `generated/`.
 
 **Setup:**
 
@@ -181,6 +186,7 @@ Any common image format (JPEG, PNG, WebP) works. Keep images under 2 MB for fast
    - For *Business* mode: create an image matching the brief in the description.
    - For *Match* mode: try to recreate the target image shown above the form.
    - For *Edit* / *Compose* mode: transform or build a scene around the input image.
+   - For *Explore* mode: upload your own image, then write an instruction to edit it.
 4. You have **3 generations per task**. A spinner appears while each image is
    created; failed attempts can be discarded to free a slot.
 5. Click **Show in gallery** on your favourite result to share it. Only one of

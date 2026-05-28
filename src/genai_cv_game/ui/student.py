@@ -20,14 +20,19 @@ from genai_cv_game.db import (
 from genai_cv_game.generation import poll_generation, start_generation
 from genai_cv_game.model_catalog import find_model, load_enabled_models
 from genai_cv_game.models import Generation, ModelEntry, Task
+from genai_cv_game.storage import save_uploaded_input_image
 from genai_cv_game.ui.gallery import render_gallery
 
 # Max time a generation may sit in 'pending' before we declare it dead.
 _PENDING_TIMEOUT_SECONDS = 180
 # How often the "still generating" block re-polls the prediction.
 _STUDENT_POLL_SECONDS = 3
-# Task modes that pass source/cut-out images to the image-generation model.
-_IMAGE_INPUT_MODES = frozenset({"edit", "compose"})
+# Task modes that pass a source image to the image-generation model.
+_IMAGE_INPUT_MODES = frozenset({"edit", "compose", "explore"})
+# Modes whose input image(s) are fixed by the task definition.
+_FIXED_INPUT_MODES = frozenset({"edit", "compose"})
+# Modes where the student uploads their own source image at generation time.
+_UPLOAD_INPUT_MODES = frozenset({"explore"})
 
 
 def render_task_page(settings: AppSettings, task: Task) -> None:
@@ -40,7 +45,7 @@ def render_task_page(settings: AppSettings, task: Task) -> None:
 
         if task.mode == "match":
             _render_target_image(task)
-        elif task.mode in _IMAGE_INPUT_MODES:
+        elif task.mode in _FIXED_INPUT_MODES:
             _render_input_images(task)
 
         _render_user_workspace(task, settings)
@@ -222,6 +227,17 @@ def _render_prompt_form(
     model = _render_model_selector(
         task, settings, next_num, preferred_slug=default_model_slug
     )
+
+    uploaded = None
+    if task.mode in _UPLOAD_INPUT_MODES:
+        uploaded = st.file_uploader(
+            "Upload an image to edit",
+            type=["png", "jpg", "jpeg", "webp"],
+            key=f"upload_{task.id}_{next_num}",
+        )
+        if uploaded is not None:
+            st.image(uploaded, caption="Your image — your prompt will edit this.")
+
     _render_prompt_tips()
     prompt = st.text_area(
         "Your prompt",
@@ -232,10 +248,13 @@ def _render_prompt_form(
     disabled = (
         not prompt.strip()
         or model is None
-        or (task.mode in _IMAGE_INPUT_MODES and not _resolve_input_image_paths(task))
+        or (task.mode in _FIXED_INPUT_MODES and not _resolve_input_image_paths(task))
+        or (task.mode in _UPLOAD_INPUT_MODES and uploaded is None)
     )
     if st.button("Generate", disabled=disabled, key=f"gen_{task.id}_{next_num}"):
-        _handle_new_generation(task, user_name, prompt.strip(), model, settings)
+        _handle_new_generation(
+            task, user_name, prompt.strip(), model, settings, uploaded=uploaded
+        )
 
 
 def _render_model_selector(
@@ -298,10 +317,11 @@ def _handle_new_generation(
     prompt: str,
     model: ModelEntry | None,
     settings: AppSettings,
+    uploaded: object | None = None,
 ) -> None:
     slug = model.slug if model else None
     image_paths: list[Path] | None = None
-    if task.mode in _IMAGE_INPUT_MODES:
+    if task.mode in _FIXED_INPUT_MODES:
         image_paths = _resolve_input_image_paths(task)
         if not image_paths:
             st.error(
@@ -309,6 +329,9 @@ def _handle_new_generation(
                 "Ask the admin to add them to `assets/input_images/`."
             )
             return
+    if task.mode in _UPLOAD_INPUT_MODES and uploaded is None:
+        st.error("Please upload an image to edit before generating.")
+        return
     try:
         generation_id = create_generation(
             settings.db_path,
@@ -321,6 +344,25 @@ def _handle_new_generation(
     except BudgetReachedError as e:
         st.warning(str(e))
         return
+    if task.mode in _UPLOAD_INPUT_MODES:
+        try:
+            suffix = (
+                Path(getattr(uploaded, "name", "") or "upload.png").suffix or ".png"
+            )
+            saved = save_uploaded_input_image(
+                settings.generated_dir,
+                task.id,
+                generation_id,
+                uploaded.getvalue(),  # type: ignore[union-attr]
+                suffix,
+            )
+        except Exception as e:
+            update_generation_status(
+                settings.db_path, generation_id, "failed", error_message=str(e)
+            )
+            st.error(f"Could not save the uploaded image: {e}")
+            return
+        image_paths = [saved]
     try:
         prediction_id = start_generation(
             prompt,
@@ -348,9 +390,7 @@ def _resolve_input_image_paths(task: Task) -> list[Path]:
 
 
 @st.fragment(run_every=_STUDENT_POLL_SECONDS)
-def _render_in_flight_notice(
-    task: Task, user_name: str, settings: AppSettings
-) -> None:
+def _render_in_flight_notice(task: Task, user_name: str, settings: AppSettings) -> None:
     rows = get_user_generations(settings.db_path, task.id, user_name)
     still_pending = any(
         _reconcile_generation(g, settings).status == "pending" for g in rows

@@ -2,7 +2,12 @@ import json
 
 import pytest
 
-from genai_cv_game.db import get_all_tasks, get_available_tasks, init_db, set_task_availability
+from genai_cv_game.db import (
+    get_all_tasks,
+    get_available_tasks,
+    init_db,
+    set_task_availability,
+)
 from genai_cv_game.tasks import load_task_definitions, sync_tasks_from_json
 
 
@@ -189,6 +194,23 @@ def test_load_compose_task_requires_at_least_one_input(tmp_path):
     )
     with pytest.raises(ValueError, match="at least one"):
         load_task_definitions(p)
+
+
+def test_load_explore_task_needs_no_input_images(tmp_path):
+    p = _write_tasks(
+        tmp_path,
+        [
+            {
+                "id": "explore1",
+                "title": "Explore",
+                "description": "d",
+                "mode": "explore",
+            }
+        ],
+    )
+    [t] = load_task_definitions(p)
+    assert t.mode == "explore"
+    assert t.input_image_paths == []
 
 
 def test_load_compose_task_allows_multiple_inputs(tmp_path):

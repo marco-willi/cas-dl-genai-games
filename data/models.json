@@ -10,9 +10,17 @@
     "id": "nano-banana-2",
     "slug": "google/nano-banana-2",
     "display_name": "Google Nano Banana 2",
-    "description": "Smaller / faster Google model; good for quick iteration. Supports image-input rounds (edit / compose).",
+    "description": "Smaller / faster Google model; good for quick iteration. Supports image input (edit / compose / free editing).",
     "supports_image_input": true,
     "sort_order": 20
+  },
+  {
+    "id": "flux-2-flex",
+    "slug": "black-forest-labs/flux-2-flex",
+    "display_name": "FLUX 2 Flex",
+    "description": "Flexible FLUX editing model; strong prompt adherence on image edits.",
+    "supports_image_input": true,
+    "sort_order": 25
   },
   {
     "id": "seedream-4",
@@ -20,6 +28,14 @@
     "display_name": "ByteDance Seedream 4",
     "description": "Stylised generation with strong composition.",
     "sort_order": 30
+  },
+  {
+    "id": "seedream-5-lite",
+    "slug": "bytedance/seedream-5-lite",
+    "display_name": "ByteDance Seedream 5 Lite",
+    "description": "Lightweight Seedream editing model; fast, stylised edits.",
+    "supports_image_input": true,
+    "sort_order": 35
   },
   {
     "id": "flux-1-1-pro",

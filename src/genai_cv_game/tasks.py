@@ -6,7 +6,7 @@ from pathlib import Path
 from genai_cv_game.db import init_db, insert_or_update_task
 from genai_cv_game.models import Task
 
-_VALID_MODES = frozenset({"business", "match", "edit", "compose"})
+_VALID_MODES = frozenset({"business", "match", "edit", "compose", "explore"})
 _IMAGE_INPUT_MODES = frozenset({"edit", "compose"})
 
 
@@ -21,9 +21,7 @@ def load_task_definitions(tasks_path: Path) -> list[Task]:
     for item in items:
         for field in ("id", "title", "description", "mode"):
             if field not in item or not item[field]:
-                raise ValueError(
-                    f"Task entry missing required field '{field}': {item}"
-                )
+                raise ValueError(f"Task entry missing required field '{field}': {item}")
         if item["mode"] not in _VALID_MODES:
             raise ValueError(
                 f"Invalid mode '{item['mode']}' for task '{item['id']}'. "

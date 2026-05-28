@@ -14,9 +14,9 @@ documented by the [Streamlit deploy concepts](https://docs.streamlit.io/deploy/c
 
 | Need | Why Community Cloud fits |
 |---|---|
-| ~10 concurrent teams | Comfortably within the free-tier resource limits |
+| ~10–30 concurrent students | Comfortably within the free-tier resource limits |
 | Public URL students can open | Each app gets a `*.streamlit.app` URL |
-| Replicate token + instructor passcode | Native secrets UI — no `.env` upload needed |
+| Replicate token + admin passcode | Native secrets UI — no `.env` upload needed |
 | Runs for a few hours, then gone | App can be deleted in one click after class |
 | Ephemeral generated images | Acceptable: results matter only during the session |
 
@@ -28,7 +28,7 @@ Trade-offs to be aware of:
 - The app sleeps after periods of inactivity. The first request after sleep
   takes ~30 s to wake. Open the URL yourself a minute before class starts.
 - Community Cloud apps deployed from a public repo are publicly reachable.
-  Anyone with the URL can open the student view. The instructor sidebar is
+  Anyone with the URL can open the student view. The admin sidebar is
   protected by `INSTRUCTOR_PASSCODE` — set a strong one (see below).
 
 ---
@@ -86,10 +86,10 @@ USE_STUB_GENERATION = "false"
 ```
 
 Notes:
-- Do **not** set `DB_PATH`, `ROUNDS_PATH`, `GENERATED_DIR`, or `ASSETS_DIR` —
+- Do **not** set `DB_PATH`, `TASKS_PATH`, `GENERATED_DIR`, or `ASSETS_DIR` —
   the defaults work and point inside the app's working directory.
 - Change `INSTRUCTOR_PASSCODE` from the default — anyone with the URL can try
-  to log into the sidebar.
+  to log into the admin sidebar.
 - If you want to test the deployment without spending Replicate credit, set
   `USE_STUB_GENERATION = "true"` first; flip to `"false"` before class.
 
@@ -102,16 +102,16 @@ panel; the app is live when you see `You can now view your Streamlit app`.
 ### 5. Smoke test before class
 
 1. Open the app URL.
-2. Confirm the title renders and a round is active.
-3. In the sidebar, log in with `INSTRUCTOR_PASSCODE`.
-4. Open submissions, submit one test prompt as a "student", confirm an image
-   is generated and appears in the gallery.
-5. Reset the round so students start clean.
+2. Confirm the title renders and the task picker lists the available tasks.
+3. In the sidebar, log in with `INSTRUCTOR_PASSCODE` (admin panel).
+4. Confirm the generation API switch is on, generate one test image as a
+   "student", and click **Show in gallery** to confirm it appears.
+5. Reset that task so students start clean.
 
 ### 6. Share the URL
 
 Send students the app URL (e.g. `https://genai-cv-class.streamlit.app`). They
-do **not** need accounts; they just open the link, enter a team name, and submit.
+do **not** need accounts; they just open the link, enter a name, and start.
 
 ---
 
@@ -120,16 +120,16 @@ do **not** need accounts; they just open the link, enter a team name, and submit
 - Keep the Streamlit Cloud dashboard open in another tab — you can see live
   logs there if something misbehaves.
 - If the app gets stuck, **Reboot app** from the dashboard. Be aware this
-  wipes the database; only use it if you are willing to restart the round.
-- The instructor controls (open/close submissions, reveal gallery, reveal
-  prompts, voting, CSV export) all run in the sidebar — same workflow as local.
+  wipes the database; only use it if you are willing to lose current galleries.
+- The admin controls (global API switch, task availability, gallery resets,
+  CSV export) all run in the sidebar — same workflow as local.
 
 ---
 
 ## Export results
 
-Before tearing the app down, use the **Download submissions CSV** button in
-the instructor sidebar for each round you want to keep. The CSV is downloaded
+Before tearing the app down, use the **Download gallery CSV** button in
+the admin sidebar for each task you want to keep. The CSV is downloaded
 to your local machine, so it survives the app's deletion.
 
 Generated image files live on the Cloud filesystem and **will be lost** when
@@ -168,9 +168,10 @@ Check that `REPLICATE_API_TOKEN` and `DEFAULT_REPLICATE_MODEL` are set in the
 Secrets panel and that the Replicate account has credit. Logs in the Cloud
 dashboard show the underlying error.
 
-**"No active round" on first load**
-The DB is created and rounds are synced from `data/rounds.json` at startup.
-If you see this, the sync did not run — reboot the app from the dashboard.
+**"No tasks are available" on first load**
+The DB is created and tasks are synced from `data/tasks.json` at startup.
+If you see this, the sync did not run or all tasks are toggled off — reboot
+the app from the dashboard and check task availability in the admin panel.
 
 **App is slow to respond when class starts**
 It probably went to sleep. Open the URL yourself 1–2 minutes before students

@@ -1,9 +1,16 @@
 [
   {
-    "id": "warmup_pyramid",
-    "title": "Warm-up: inverted animal pyramid",
-    "description": "Create an image of an inverted animal pyramid: an elephant on top of a horse on top of a dog on top of a cat on top of a mouse. The stack should be clearly readable, with each animal recognisable and roughly in its expected proportions relative to the others.",
+    "id": "free_exploration",
+    "title": "Free exploration: text to image",
+    "description": "Toy around with the text-to-image models however you like. Write any prompt you want, switch between models, and compare how each one interprets the same description. This is fully open-ended — experiment, iterate, and see what the models can (and can't) do.",
     "mode": "business",
+    "target_image_path": null
+  },
+  {
+    "id": "explore_edit_your_image",
+    "title": "Free exploration: edit your own image",
+    "description": "Upload any image of your own and transform it with a text instruction — change the style, lighting, background, season, or add and remove elements. This is open-ended: experiment freely, switch between models, and compare how each one interprets the same instruction. Be specific about what should change and what should stay the same.",
+    "mode": "explore",
     "target_image_path": null
   },
   {
@@ -21,16 +28,16 @@
     "target_image_path": null
   },
   {
-    "id": "out_of_distribution_wine_glass",
-    "title": "Out-of-distribution example: wine glass",
-    "description": "Generate an image of a wine glass full of red wine. It should be full to the brim.",
-    "mode": "business",
+    "id": "camera_trap_serval_conditioned",
+    "title": "Synthetic training data: With conditioning",
+    "description": "Same goal as the serval camera-trap task — produce a realistic camera trap image plausible enough to use as additional synthetic training data for a wildlife-monitoring detector (correct species morphology, nighttime or low-light grainy trail-camera look, natural African savanna context, slight motion blur, infrared-leaning colour cast where appropriate) — but this time you condition the generation on a reference image. Upload a reference (for example a real serval photo or a sample trail-camera frame) and use your prompt to steer the model: keep the subject's appearance and pose from the reference while imposing the camera-trap style, lighting, and scene.",
+    "mode": "explore",
     "target_image_path": null
   },
   {
     "id": "out_of_distribution_anything",
-    "title": "Out-of-distribution: Anything you like",
-    "description": "Try to come up with a prompt that the model fails to generate accurately because it is out-of-distribution.",
+    "title": "Make it fail",
+    "description": "Find a prompt that the model fails to reproduce faithfully. A classical example is a full wine glass. Try anything you like.",
     "mode": "business",
     "target_image_path": null
   },

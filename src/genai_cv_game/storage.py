@@ -20,6 +20,26 @@ def make_submission_image_path(
     return path
 
 
+def save_uploaded_input_image(
+    generated_dir: Path,
+    task_id: str,
+    generation_id: str,
+    data: bytes,
+    suffix: str,
+) -> Path:
+    """Persist a student-uploaded source image next to its generation.
+
+    Used by explore-mode tasks, where the image to edit comes from a file
+    upload rather than a path declared in the task. The saved file is then
+    handed to `start_generation` as the model's image input.
+    """
+    suffix = suffix if suffix.startswith(".") else f".{suffix}"
+    dest = generated_dir / task_id / f"{generation_id}_input{suffix}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return dest
+
+
 def clear_generated_dir(generated_dir: Path) -> None:
     """Remove every per-task subdirectory under generated_dir. Top dir survives."""
     if not generated_dir.exists():

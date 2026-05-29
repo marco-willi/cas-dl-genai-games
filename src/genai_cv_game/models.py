@@ -1,4 +1,41 @@
+from typing import Literal
+
 from pydantic import BaseModel
+
+VoteLabel = Literal["real", "synthetic"]
+VOTE_LABELS: frozenset[str] = frozenset({"real", "synthetic"})
+
+
+class VoteImage(BaseModel):
+    """One pre-labelled image shown in a `vote`-mode task.
+
+    Images are declared inline in `tasks.json` under `vote_images` and synced
+    into the `vote_images` table. The `label` is the ground truth revealed only
+    on the Results tab.
+    """
+
+    id: str
+    task_id: str = ""
+    image_path: str
+    label: VoteLabel
+    sort_order: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class Vote(BaseModel):
+    """A single user's real/synthetic guess for one vote image.
+
+    At most one row exists per (image, user); re-voting updates it in place.
+    """
+
+    id: str
+    task_id: str
+    image_id: str
+    user_name: str
+    vote: VoteLabel
+    created_at: str
+    updated_at: str
 
 
 class Task(BaseModel):
@@ -8,6 +45,7 @@ class Task(BaseModel):
     mode: str
     target_image_path: str | None = None
     input_image_paths: list[str] = []
+    vote_images: list[VoteImage] = []
     is_available: bool = True
     created_at: str = ""
     updated_at: str = ""

@@ -22,6 +22,7 @@ from genai_cv_game.model_catalog import find_model, load_enabled_models
 from genai_cv_game.models import Generation, ModelEntry, Task
 from genai_cv_game.storage import save_uploaded_input_image
 from genai_cv_game.ui.gallery import render_gallery
+from genai_cv_game.ui.vote import render_vote_page
 
 # Max time a generation may sit in 'pending' before we declare it dead.
 _PENDING_TIMEOUT_SECONDS = 180
@@ -33,10 +34,22 @@ _IMAGE_INPUT_MODES = frozenset({"edit", "compose", "explore"})
 _FIXED_INPUT_MODES = frozenset({"edit", "compose"})
 # Modes where the student uploads their own source image at generation time.
 _UPLOAD_INPUT_MODES = frozenset({"explore"})
+# Mode that fans one prompt out across several models for side-by-side comparison.
+_COMPARISON_MODE = "comparison"
+# Most models a single comparison round may fan out to.
+_MAX_COMPARISON_MODELS = 4
 
 
 def render_task_page(settings: AppSettings, task: Task) -> None:
-    """Render one task's page: a Generate tab and a Gallery tab."""
+    """Render one task's page.
+
+    Vote tasks get their own Vote/Results layout; every other mode shows the
+    generation workspace (Generate + Gallery tabs).
+    """
+    if task.mode == "vote":
+        render_vote_page(settings, task)
+        return
+
     tab_generate, tab_gallery = st.tabs(["Generate", "Gallery"])
 
     with tab_generate:
@@ -117,9 +130,12 @@ def _render_user_workspace(task: Task, settings: AppSettings) -> None:
     has_in_flight = any(g.status == "pending" for g in generations)
     live_count = sum(1 for g in generations if g.status != "failed")
 
+    max_cols = _MAX_COMPARISON_MODELS if task.mode == _COMPARISON_MODE else 3
     if generations:
         st.subheader(f"Your generations ({live_count} / {settings.generation_budget})")
-        _render_generations_grid(generations, settings, locked=has_in_flight)
+        _render_generations_grid(
+            generations, settings, locked=has_in_flight, max_cols=max_cols
+        )
 
     if has_in_flight:
         _render_in_flight_notice(task, user_name, settings)
@@ -137,16 +153,22 @@ def _render_user_workspace(task: Task, settings: AppSettings) -> None:
         )
         return
 
-    _render_prompt_form(task, user_name, generations, settings)
+    if task.mode == _COMPARISON_MODE:
+        _render_comparison_form(task, user_name, generations, settings)
+    else:
+        _render_prompt_form(task, user_name, generations, settings)
 
 
 # ── Generation cards ─────────────────────────────────────────────────────────
 
 
 def _render_generations_grid(
-    generations: list[Generation], settings: AppSettings, locked: bool
+    generations: list[Generation],
+    settings: AppSettings,
+    locked: bool,
+    max_cols: int = 3,
 ) -> None:
-    cols = st.columns(min(3, max(1, len(generations))))
+    cols = st.columns(min(max_cols, max(1, len(generations))))
     for i, gen in enumerate(generations):
         with cols[i % len(cols)]:
             _render_generation_card(gen, settings, locked=locked)
@@ -384,6 +406,103 @@ def _handle_new_generation(
 
 def _resolve_input_image_paths(task: Task) -> list[Path]:
     return [Path(p) for p in task.input_image_paths if Path(p).exists()]
+
+
+# ── Comparison form (fan one prompt out across several models) ───────────────
+
+
+def _render_comparison_form(
+    task: Task, user_name: str, generations: list[Generation], settings: AppSettings
+) -> None:
+    """One prompt, many models: fan out to each selected model in a single click."""
+    live_count = sum(1 for g in generations if g.status != "failed")
+    remaining = settings.generation_budget - live_count
+
+    enabled = load_enabled_models(settings.models_path)
+    if not enabled:
+        st.error(
+            "Model comparison needs at least one enabled model. Ask the admin to "
+            "enable models in `data/models.json`."
+        )
+        return
+
+    cap = min(_MAX_COMPARISON_MODELS, remaining)
+    st.subheader("Run a comparison")
+    st.caption(
+        "Write one prompt, pick the models to compare, and generate them all at "
+        f"once. You can run up to {cap} model{'s' if cap != 1 else ''} now "
+        f"({remaining} generation slot{'s' if remaining != 1 else ''} left)."
+    )
+
+    _render_prompt_tips()
+    prompt = st.text_area("Your prompt", key=f"cmp_prompt_{task.id}")
+
+    default_slugs = [m.slug for m in enabled[: min(3, len(enabled))]]
+    selected_slugs = st.multiselect(
+        "Models to compare",
+        options=[m.slug for m in enabled],
+        default=default_slugs,
+        format_func=lambda slug: next(
+            m.display_name for m in enabled if m.slug == slug
+        ),
+        max_selections=_MAX_COMPARISON_MODELS,
+        key=f"cmp_models_{task.id}",
+    )
+
+    n = len(selected_slugs)
+    over_budget = n > remaining
+    if over_budget:
+        st.warning(
+            f"Only {remaining} generation slot{'s' if remaining != 1 else ''} left. "
+            "Deselect a model or reset some results."
+        )
+
+    disabled = not prompt.strip() or n == 0 or over_budget
+    label = f"Generate across {n} model{'s' if n != 1 else ''}" if n else "Generate"
+    if st.button(label, type="primary", disabled=disabled, key=f"cmp_gen_{task.id}"):
+        models = [m for m in enabled if m.slug in selected_slugs]
+        _handle_comparison_generation(task, user_name, prompt.strip(), models, settings)
+
+
+def _handle_comparison_generation(
+    task: Task,
+    user_name: str,
+    prompt: str,
+    models: list[ModelEntry],
+    settings: AppSettings,
+) -> None:
+    """Create + start one generation per model. One model failing never aborts
+    the rest; budget is enforced per-row by `create_generation`."""
+    created = 0
+    for model in models:
+        try:
+            generation_id = create_generation(
+                settings.db_path,
+                task.id,
+                user_name,
+                prompt,
+                settings.generation_budget,
+                model_slug=model.slug,
+            )
+        except BudgetReachedError as e:
+            st.warning(str(e))
+            break
+        created += 1
+        try:
+            prediction_id = start_generation(
+                prompt,
+                task.id,
+                generation_id,
+                settings,
+                model_slug=model.slug,
+            )
+            set_generation_prediction(settings.db_path, generation_id, prediction_id)
+        except Exception as e:
+            update_generation_status(
+                settings.db_path, generation_id, "failed", error_message=str(e)
+            )
+    if created:
+        st.rerun()
 
 
 # ── In-flight polling (auto-refresh while pending) ──────────────────────────

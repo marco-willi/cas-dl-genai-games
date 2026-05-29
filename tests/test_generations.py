@@ -90,6 +90,32 @@ def test_create_generation_rejects_zero_budget(tmp_path):
         create_generation(db, "t1", "Alice", "p", generation_budget=0)
 
 
+def test_fan_out_creates_one_row_per_model(tmp_path):
+    # Mirrors the comparison-mode fan-out: one prompt, one row per model.
+    db = _setup(tmp_path)
+    slugs = [
+        "google/imagen-4",
+        "black-forest-labs/flux-1.1-pro",
+        "bytedance/seedream-4",
+    ]
+    for slug in slugs:
+        create_generation(
+            db, "t1", "Alice", "same prompt", generation_budget=30, model_slug=slug
+        )
+    rows = get_user_generations(db, "t1", "Alice")
+    assert len(rows) == 3
+    assert {r.model_slug for r in rows} == set(slugs)
+    assert {r.prompt for r in rows} == {"same prompt"}
+
+
+def test_fan_out_respects_budget(tmp_path):
+    db = _setup(tmp_path)
+    create_generation(db, "t1", "Alice", "p", generation_budget=2, model_slug="m/a")
+    create_generation(db, "t1", "Alice", "p", generation_budget=2, model_slug="m/b")
+    with pytest.raises(BudgetReachedError):
+        create_generation(db, "t1", "Alice", "p", generation_budget=2, model_slug="m/c")
+
+
 def test_delete_generation(tmp_path):
     db = _setup(tmp_path)
     g1 = create_generation(db, "t1", "Alice", "p1", generation_budget=3)

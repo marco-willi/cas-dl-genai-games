@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from genai_cv_game.models import Generation, Task
+from genai_cv_game.models import VOTE_LABELS, Generation, Task, Vote, VoteImage
 from genai_cv_game.utils import new_id, now_utc
 
 _ALLOWED_GENERATION_STATUSES = frozenset({"pending", "completed", "failed"})
@@ -69,10 +69,37 @@ def create_tables(db_path: Path) -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS vote_images (
+                id         TEXT NOT NULL,
+                task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                image_path TEXT NOT NULL,
+                label      TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (task_id, id)
+            );
+
+            CREATE TABLE IF NOT EXISTS votes (
+                id         TEXT PRIMARY KEY,
+                task_id    TEXT NOT NULL,
+                image_id   TEXT NOT NULL,
+                user_name  TEXT NOT NULL,
+                vote       TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (task_id, image_id)
+                    REFERENCES vote_images (task_id, id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_generations_task_user
                 ON generations (task_id, LOWER(user_name));
             CREATE UNIQUE INDEX IF NOT EXISTS idx_generations_gallery_task_user
                 ON generations (task_id, LOWER(user_name)) WHERE in_gallery=1;
+            CREATE INDEX IF NOT EXISTS idx_vote_images_task
+                ON vote_images (task_id, sort_order);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_votes_image_user
+                ON votes (task_id, image_id, LOWER(user_name));
         """)
         conn.execute(
             "INSERT OR IGNORE INTO app_settings (key, value, updated_at) "
@@ -351,6 +378,156 @@ def delete_database(db_path: Path) -> None:
             sidecar.unlink()
 
 
+# ── Vote images / Votes ───────────────────────────────────────────────────────
+
+
+def upsert_vote_image(db_path: Path, image: VoteImage) -> None:
+    """Insert or update one vote image's definitional columns."""
+    if image.label not in VOTE_LABELS:
+        raise ValueError(
+            f"Invalid label {image.label!r}. Must be one of: {sorted(VOTE_LABELS)}"
+        )
+    ts = now_utc()
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO vote_images
+                (id, task_id, image_path, label, sort_order, created_at, updated_at)
+            VALUES (:id, :task_id, :image_path, :label, :sort_order, :ts, :ts)
+            ON CONFLICT(task_id, id) DO UPDATE SET
+                image_path = excluded.image_path,
+                label      = excluded.label,
+                sort_order = excluded.sort_order,
+                updated_at = excluded.updated_at
+            """,
+            {
+                "id": image.id,
+                "task_id": image.task_id,
+                "image_path": image.image_path,
+                "label": image.label,
+                "sort_order": image.sort_order,
+                "ts": ts,
+            },
+        )
+
+
+def sync_vote_images(db_path: Path, task_id: str, images: list[VoteImage]) -> None:
+    """Replace a task's vote images with `images`, deleting any that vanished.
+
+    Votes referencing a removed image are cascaded away. Re-syncing the same
+    images preserves their votes (rows are upserted, not recreated).
+    """
+    keep_ids = [img.id for img in images]
+    with get_connection(db_path) as conn:
+        if keep_ids:
+            placeholders = ",".join("?" for _ in keep_ids)
+            conn.execute(
+                f"DELETE FROM vote_images WHERE task_id=? AND id NOT IN ({placeholders})",
+                (task_id, *keep_ids),
+            )
+        else:
+            conn.execute("DELETE FROM vote_images WHERE task_id=?", (task_id,))
+    for img in images:
+        upsert_vote_image(db_path, img.model_copy(update={"task_id": task_id}))
+
+
+def get_vote_images(db_path: Path, task_id: str) -> list[VoteImage]:
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM vote_images WHERE task_id=? ORDER BY sort_order, created_at",
+            (task_id,),
+        ).fetchall()
+    return [_row_to_vote_image(r) for r in rows]
+
+
+def cast_vote(
+    db_path: Path, task_id: str, image_id: str, user_name: str, vote: str
+) -> None:
+    """Record (or change) one user's vote for one image.
+
+    One row per (image, user); re-voting updates the existing row. Raises
+    ValueError on blank user, invalid label, or unknown image.
+    """
+    normalized = user_name.strip()
+    if not normalized:
+        raise ValueError("user_name must not be empty")
+    if vote not in VOTE_LABELS:
+        raise ValueError(
+            f"Invalid vote {vote!r}. Must be one of: {sorted(VOTE_LABELS)}"
+        )
+    ts = now_utc()
+    with get_connection(db_path) as conn:
+        img = conn.execute(
+            "SELECT 1 FROM vote_images WHERE id=? AND task_id=?", (image_id, task_id)
+        ).fetchone()
+        if not img:
+            raise ValueError(f"Unknown vote image {image_id!r} for task {task_id!r}")
+        existing = conn.execute(
+            "SELECT id FROM votes "
+            "WHERE task_id=? AND image_id=? AND LOWER(user_name)=LOWER(?)",
+            (task_id, image_id, normalized),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE votes SET vote=?, updated_at=? WHERE id=?",
+                (vote, ts, existing["id"]),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO votes
+                    (id, task_id, image_id, user_name, vote, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (new_id(), task_id, image_id, normalized, vote, ts, ts),
+            )
+
+
+def get_user_votes(db_path: Path, task_id: str, user_name: str) -> dict[str, str]:
+    """Return {image_id: vote} for one user on one task."""
+    needle = user_name.strip()
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT image_id, vote FROM votes "
+            "WHERE task_id=? AND LOWER(user_name)=LOWER(?)",
+            (task_id, needle),
+        ).fetchall()
+    return {r["image_id"]: r["vote"] for r in rows}
+
+
+def get_vote_tallies(db_path: Path, task_id: str) -> dict[str, dict[str, int]]:
+    """Return {image_id: {"real": n, "synthetic": m}} for every image on a task."""
+    tallies: dict[str, dict[str, int]] = {}
+    with get_connection(db_path) as conn:
+        image_rows = conn.execute(
+            "SELECT id FROM vote_images WHERE task_id=?", (task_id,)
+        ).fetchall()
+        for r in image_rows:
+            tallies[r["id"]] = {"real": 0, "synthetic": 0}
+        rows = conn.execute(
+            "SELECT image_id, vote, COUNT(*) AS n FROM votes "
+            "WHERE task_id=? GROUP BY image_id, vote",
+            (task_id,),
+        ).fetchall()
+    for r in rows:
+        bucket = tallies.setdefault(r["image_id"], {"real": 0, "synthetic": 0})
+        if r["vote"] in bucket:
+            bucket[r["vote"]] = r["n"]
+    return tallies
+
+
+def reset_task_votes(db_path: Path, task_id: str) -> None:
+    """Delete every vote for one task (keeps the vote images)."""
+    with get_connection(db_path) as conn:
+        conn.execute("DELETE FROM votes WHERE task_id=?", (task_id,))
+
+
+def reset_all_votes(db_path: Path) -> None:
+    """Delete every vote across all tasks."""
+    with get_connection(db_path) as conn:
+        conn.execute("DELETE FROM votes")
+
+
 # ── App settings ──────────────────────────────────────────────────────────────
 
 
@@ -398,6 +575,30 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         target_image_path=row["target_image_path"],
         input_image_paths=json.loads(raw_inputs),
         is_available=bool(row["is_available"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _row_to_vote_image(row: sqlite3.Row) -> VoteImage:
+    return VoteImage(
+        id=row["id"],
+        task_id=row["task_id"],
+        image_path=row["image_path"],
+        label=row["label"],
+        sort_order=row["sort_order"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _row_to_vote(row: sqlite3.Row) -> Vote:
+    return Vote(
+        id=row["id"],
+        task_id=row["task_id"],
+        image_id=row["image_id"],
+        user_name=row["user_name"],
+        vote=row["vote"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

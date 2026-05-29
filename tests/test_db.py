@@ -38,10 +38,15 @@ def test_init_creates_tables(tmp_path):
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()
     }
-    assert {"tasks", "generations", "app_settings"} <= tables
+    assert {
+        "tasks",
+        "generations",
+        "app_settings",
+        "vote_images",
+        "votes",
+    } <= tables
     assert "rounds" not in tables
     assert "submissions" not in tables
-    assert "votes" not in tables
     assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
 
 

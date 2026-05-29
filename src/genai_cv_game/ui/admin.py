@@ -8,7 +8,9 @@ from genai_cv_game.db import (
     get_all_tasks,
     is_api_enabled,
     reset_all_generations,
+    reset_all_votes,
     reset_task_generations,
+    reset_task_votes,
     set_api_enabled,
     set_task_availability,
 )
@@ -17,6 +19,7 @@ from genai_cv_game.storage import (
     clear_generated_dir,
     clear_task_generated_dir,
     export_gallery_csv,
+    export_votes_csv,
 )
 from genai_cv_game.tasks import sync_tasks_from_json
 
@@ -81,10 +84,11 @@ def _render_availability(tasks: list[Task], settings: AppSettings) -> None:
 
 
 def _render_gallery_resets(tasks: list[Task], settings: AppSettings) -> None:
-    st.subheader("Gallery resets")
+    st.subheader("Data resets")
     st.caption(
-        "Resetting deletes all generations (and image files) for the task — "
-        "this clears the gallery and frees students' budgets. There is no undo."
+        "Resetting clears all data for the task — for generation tasks this "
+        "deletes generations and image files (freeing students' budgets); for "
+        "vote tasks it deletes all cast votes. There is no undo."
     )
 
     options = {t.id: t.title for t in tasks}
@@ -94,48 +98,54 @@ def _render_gallery_resets(tasks: list[Task], settings: AppSettings) -> None:
         format_func=lambda tid: options[tid],
         key="reset_task_select",
     )
-    confirm_one = st.checkbox(
-        "Confirm reset of this task", key="reset_task_confirm"
-    )
-    if st.button(
-        "Reset this task", disabled=not confirm_one, type="secondary"
-    ):
+    confirm_one = st.checkbox("Confirm reset of this task", key="reset_task_confirm")
+    if st.button("Reset this task", disabled=not confirm_one, type="secondary"):
         reset_task_generations(settings.db_path, selected_id)
+        reset_task_votes(settings.db_path, selected_id)
         clear_task_generated_dir(settings.generated_dir, selected_id)
-        st.success(f"Reset gallery for '{options[selected_id]}'.")
+        st.success(f"Reset data for '{options[selected_id]}'.")
         st.rerun()
 
     st.markdown("---")
-    confirm_all = st.checkbox(
-        "Confirm reset of ALL tasks", key="reset_all_confirm"
-    )
-    if st.button(
-        "Reset ALL galleries", disabled=not confirm_all, type="secondary"
-    ):
+    confirm_all = st.checkbox("Confirm reset of ALL tasks", key="reset_all_confirm")
+    if st.button("Reset ALL tasks", disabled=not confirm_all, type="secondary"):
         reset_all_generations(settings.db_path)
+        reset_all_votes(settings.db_path)
         clear_generated_dir(settings.generated_dir)
-        st.success("All galleries reset.")
+        st.success("All task data reset.")
         st.rerun()
 
 
 def _render_export(tasks: list[Task], settings: AppSettings) -> None:
     st.subheader("Export")
     options = {t.id: t.title for t in tasks}
+    modes = {t.id: t.mode for t in tasks}
     selected_id = st.selectbox(
         "Task to export",
         options=list(options.keys()),
         format_func=lambda tid: options[tid],
         key="export_task_select",
     )
-    csv_bytes = export_gallery_csv(
-        settings.db_path, selected_id, task_title=options[selected_id]
-    )
-    st.download_button(
-        label="Download gallery CSV",
-        data=csv_bytes,
-        file_name=f"{selected_id}_gallery.csv",
-        mime="text/csv",
-    )
+    if modes[selected_id] == "vote":
+        csv_bytes = export_votes_csv(
+            settings.db_path, selected_id, task_title=options[selected_id]
+        )
+        st.download_button(
+            label="Download vote results CSV",
+            data=csv_bytes,
+            file_name=f"{selected_id}_votes.csv",
+            mime="text/csv",
+        )
+    else:
+        csv_bytes = export_gallery_csv(
+            settings.db_path, selected_id, task_title=options[selected_id]
+        )
+        st.download_button(
+            label="Download gallery CSV",
+            data=csv_bytes,
+            file_name=f"{selected_id}_gallery.csv",
+            mime="text/csv",
+        )
 
 
 _DB_WIPE_CONFIRM = "DELETE"

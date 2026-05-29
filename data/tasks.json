@@ -1,5 +1,73 @@
 [
   {
+    "id": "spot_the_fake",
+    "title": "Real or AI? Spot the fake",
+    "description": "For each image, vote whether you think it is a real photograph or AI-generated. Once everyone has voted, open the Results tab to see how the class did and which images fooled the most people.",
+    "mode": "vote",
+    "vote_images": [
+      {
+        "id": "img_01",
+        "path": "assets/vote_images/spot_the_fake/albert-dera-ILip77SbmOE-unsplash.jpg",
+        "label": "real"
+      },
+      {
+        "id": "img_02",
+        "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 22, 2026, 10_32_18 PM.png",
+        "label": "synthetic"
+      },
+      {
+        "id": "img_03",
+        "path": "assets/vote_images/spot_the_fake/hugo-sousa-m7_lccaGaYA-unsplash.jpg",
+        "label": "real"
+      },
+      {
+        "id": "img_04",
+        "path": "assets/vote_images/spot_the_fake/Gemini_Generated_Image_vr6skcvr6skcvr6s.png",
+        "label": "synthetic"
+      },
+      {
+        "id": "img_05",
+        "path": "assets/vote_images/spot_the_fake/omar-lopez-1qfy-jDc_jo-unsplash.jpg",
+        "label": "real"
+      },
+      {
+        "id": "img_06",
+        "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 22, 2026, 10_44_43 PM.png",
+        "label": "synthetic"
+      },
+      {
+        "id": "img_07",
+        "path": "assets/vote_images/spot_the_fake/pascal-meier-UYiesSO4FiM-unsplash.jpg",
+        "label": "real"
+      },
+      {
+        "id": "img_08",
+        "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 22, 2026, 10_53_51 PM.png",
+        "label": "synthetic"
+      },
+      {
+        "id": "img_09",
+        "path": "assets/vote_images/spot_the_fake/peter-noah-58qVxGi7slU-unsplash.jpg",
+        "label": "real"
+      },
+      {
+        "id": "img_10",
+        "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 29, 2026, 02_47_50 PM.png",
+        "label": "synthetic"
+      },
+      {
+        "id": "img_11",
+        "path": "assets/vote_images/spot_the_fake/rayul-_M6gy9oHgII-unsplash.jpg",
+        "label": "real"
+      },
+      {
+        "id": "img_12",
+        "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 29, 2026, 02_43_09 PM.png",
+        "label": "synthetic"
+      }
+    ]
+  },
+  {
     "id": "free_exploration",
     "title": "Free exploration: text to image",
     "description": "Toy around with the text-to-image models however you like. Write any prompt you want, switch between models, and compare how each one interprets the same description. This is fully open-ended — experiment, iterate, and see what the models can (and can't) do.",
@@ -7,16 +75,23 @@
     "target_image_path": null
   },
   {
-    "id": "explore_edit_your_image",
-    "title": "Free exploration: edit your own image",
-    "description": "Upload any image of your own and transform it with a text instruction — change the style, lighting, background, season, or add and remove elements. This is open-ended: experiment freely, switch between models, and compare how each one interprets the same instruction. Be specific about what should change and what should stay the same.",
-    "mode": "explore",
-    "target_image_path": null
-  },
-  {
     "id": "pizzeria_visual",
     "title": "Pizzeria visual",
     "description": "Create a visual for a Pizzeria. It should show a scene associated with the Pizzeria. You can try anything — interior, storefront, dish, staff at work, branded photography. The goal is to obtain something useful that could realistically be used in a real setting (menu cover, social post, website hero, flyer).",
+    "mode": "business",
+    "target_image_path": null
+  },
+  {
+    "id": "match_brand_family",
+    "title": "Match the brand campaign: character family",
+    "description": "Recreate the target image as closely as you can using text only. Pay close attention to the matryoshka-doll character lineup ordered by size, the 3D stylised character shapes (rounded, slightly oversized heads, simple expressive faces), the warm food-brand colour palette, what each character is holding, and the overall ad-photography feel against a neutral background.",
+    "mode": "match",
+    "target_image_path": "assets/target_images/marketing_campaign.png"
+  },
+  {
+    "id": "out_of_distribution_anything",
+    "title": "Make it fail",
+    "description": "Find a prompt that the model fails to reproduce faithfully. A classical example is a full wine glass. Try anything you like.",
     "mode": "business",
     "target_image_path": null
   },
@@ -33,20 +108,6 @@
     "description": "Same goal as the serval camera-trap task — produce a realistic camera trap image plausible enough to use as additional synthetic training data for a wildlife-monitoring detector (correct species morphology, nighttime or low-light grainy trail-camera look, natural African savanna context, slight motion blur, infrared-leaning colour cast where appropriate) — but this time you condition the generation on a reference image. Upload a reference (for example a real serval photo or a sample trail-camera frame) and use your prompt to steer the model: keep the subject's appearance and pose from the reference while imposing the camera-trap style, lighting, and scene.",
     "mode": "explore",
     "target_image_path": null
-  },
-  {
-    "id": "out_of_distribution_anything",
-    "title": "Make it fail",
-    "description": "Find a prompt that the model fails to reproduce faithfully. A classical example is a full wine glass. Try anything you like.",
-    "mode": "business",
-    "target_image_path": null
-  },
-  {
-    "id": "match_brand_family",
-    "title": "Match the brand campaign: character family",
-    "description": "Recreate the target image as closely as you can using text only. Pay close attention to the matryoshka-doll character lineup ordered by size, the 3D stylised character shapes (rounded, slightly oversized heads, simple expressive faces), the warm food-brand colour palette, what each character is holding, and the overall ad-photography feel against a neutral background.",
-    "mode": "match",
-    "target_image_path": "assets/target_images/marketing_campaign.png"
   },
   {
     "id": "edit_relight_storefront",
@@ -67,5 +128,19 @@
     "input_image_paths": [
       "assets/input_images/compose/compose_product_in_scene.jpg"
     ]
+  },
+  {
+    "id": "explore_edit_your_image",
+    "title": "Free exploration: edit your own image",
+    "description": "Upload any image of your own and transform it with a text instruction — change the style, lighting, background, season, or add and remove elements. This is open-ended: experiment freely, switch between models, and compare how each one interprets the same instruction. Be specific about what should change and what should stay the same.",
+    "mode": "explore",
+    "target_image_path": null
+  },
+  {
+    "id": "model_comparison",
+    "title": "Model comparison: same prompt, different models",
+    "description": "Write one prompt, then run it unchanged across several models and compare the results side by side. Judge each output on explicit criteria: prompt adherence, visual realism, composition, text rendering, object identity, controllability, and usefulness for your target application. Pick the best output and be ready to justify your choice against those criteria. Tip: a prompt that stresses text, a specific object, or a precise composition exposes the differences between models most clearly.",
+    "mode": "comparison",
+    "target_image_path": null
   }
 ]

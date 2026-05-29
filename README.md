@@ -9,9 +9,12 @@ to create images. Task modes:
 - **Edit** — transform a source image with a prompt
 - **Compose** — place a cut-out object into a generated scene
 - **Explore** — upload your own image and edit it with a text instruction (open-ended)
+- **Vote** — *real vs AI* voting game: students vote on a grid of pre-labelled images and a Results tab reveals the tallies, true labels, and crowd accuracy (no generation involved)
+- **Comparison** — *model bake-off*: write one prompt, fan it out across several models in a single click, and compare the outputs side by side
 
-Each student picks any available task, has a fixed budget of 3 generations per
-task, and may share one result into that task's public gallery. An admin panel
+Each student picks any available task, has a fixed budget of generations per
+task (default 30, configurable via `GENERATION_BUDGET`), and may share one result
+into that task's public gallery. An admin panel
 (password-protected sidebar) controls a global generation on/off switch, which
 tasks are available, and gallery resets.
 
@@ -59,7 +62,7 @@ Copy `.env.example` to `.env` and set values before running.
 | `GENERATED_DIR` | No | `generated` | Directory where generated images are saved. |
 | `ASSETS_DIR` | No | `assets` | Directory for target images and placeholder. |
 | `USE_STUB_GENERATION` | No | `false` | Set to `true` to skip Replicate and return a placeholder image. |
-| `GENERATION_BUDGET` | No | `3` | Number of generations each student gets per task. |
+| `GENERATION_BUDGET` | No | `3` | Number of generations each student gets per task. The bundled `.env.example` sets `30` to leave room for the model-comparison task's fan-out rounds. |
 
 ---
 
@@ -84,9 +87,10 @@ Edit `data/tasks.json`. Each task is a JSON object:
 | `id` | unique string | Used as a directory name; keep it slug-safe |
 | `title` | string | Shown as the task heading and in the task picker |
 | `description` | string | Shown below the heading |
-| `mode` | `"business"`, `"match"`, `"edit"`, `"compose"`, or `"explore"` | Controls what reference imagery is shown and whether images are sent to the model |
+| `mode` | `"business"`, `"match"`, `"edit"`, `"compose"`, `"explore"`, `"vote"`, or `"comparison"` | Controls what reference imagery is shown and whether images are sent to the model |
 | `target_image_path` | path string or `null` | Required for `match` mode; ignored for the others |
 | `input_image_paths` | list of path strings | Required for `edit` (exactly 1) and `compose` (≥ 1); ignored for `business` / `match` / `explore` |
+| `vote_images` | list of `{id, path, label}` objects | Required (non-empty) for `vote` mode; rejected for other modes |
 
 Tasks are synced into the database on every app start. Adding or renaming a task
 takes effect on the next restart; admin availability choices are preserved.
@@ -164,6 +168,50 @@ Any common image format (JPEG, PNG, WebP) works. Keep images under 2 MB for fast
 
 ---
 
+## Vote tasks (Real vs AI game)
+
+A `vote`-mode task shows students a grid of pre-labelled images. Each student
+casts one vote per image — **Real** or **AI** — and can change their mind until
+they leave the page (one vote per user per image). The **Results** tab updates
+live with per-image tallies, reveals the true label, flags whether the crowd's
+majority guessed correctly, and shows an overall crowd-accuracy metric. No image
+generation, model, or budget is involved.
+
+**Setup:**
+
+1. Drop the images into a per-task folder under `assets/vote_images/`:
+
+   ```
+   assets/vote_images/<task_id>/img_01.jpg
+   assets/vote_images/<task_id>/img_02.png
+   ```
+
+2. Reference them from `data/tasks.json`, labelling each `real` or `synthetic`:
+
+   ```json
+   {
+     "id": "spot_the_fake",
+     "title": "Real or AI? Spot the fake",
+     "description": "For each image, vote real or AI-generated.",
+     "mode": "vote",
+     "vote_images": [
+       { "id": "img_01", "path": "assets/vote_images/spot_the_fake/img_01.png", "label": "real" },
+       { "id": "img_02", "path": "assets/vote_images/spot_the_fake/img_02.png", "label": "synthetic" }
+     ]
+   }
+   ```
+
+   Each `id` must be unique within the task, `label` must be `real` or
+   `synthetic`, and every `path` must exist on disk or the task refuses to load.
+
+3. Restart the app. The shipped `spot_the_fake` task uses placeholder images —
+   replace them with your own real photos and AI generations.
+
+Admin resets clear a vote task's cast votes (keeping the images), and the Export
+section offers a per-image **vote results CSV** for vote tasks.
+
+---
+
 ## Admin Workflow
 
 1. Open the app and enter the admin passcode in the sidebar.
@@ -187,8 +235,13 @@ Any common image format (JPEG, PNG, WebP) works. Keep images under 2 MB for fast
    - For *Match* mode: try to recreate the target image shown above the form.
    - For *Edit* / *Compose* mode: transform or build a scene around the input image.
    - For *Explore* mode: upload your own image, then write an instruction to edit it.
-4. You have **3 generations per task**. A spinner appears while each image is
-   created; failed attempts can be discarded to free a slot.
+   - For *Comparison* mode: write one prompt, pick up to 4 models, and click
+     **Generate across N models** — every model runs the same prompt at once and the
+     results line up side by side. Judge them on prompt adherence, realism,
+     composition, text rendering, object identity, controllability, and usefulness;
+     pick a winner and justify it.
+4. Most tasks give you a budget of generations per task (default **30**). A spinner
+   appears while each image is created; failed attempts can be discarded to free a slot.
 5. Click **Show in gallery** on your favourite result to share it. Only one of
    your results per task can be in the gallery at a time.
 6. The gallery shows every classmate's shared result for the task and refreshes

@@ -196,6 +196,24 @@ def test_load_compose_task_requires_at_least_one_input(tmp_path):
         load_task_definitions(p)
 
 
+def test_load_comparison_task(tmp_path):
+    p = _write_tasks(
+        tmp_path,
+        [
+            {
+                "id": "cmp1",
+                "title": "Comparison",
+                "description": "d",
+                "mode": "comparison",
+            }
+        ],
+    )
+    [t] = load_task_definitions(p)
+    assert t.mode == "comparison"
+    assert t.input_image_paths == []
+    assert t.vote_images == []
+
+
 def test_load_explore_task_needs_no_input_images(tmp_path):
     p = _write_tasks(
         tmp_path,
@@ -230,3 +248,158 @@ def test_load_compose_task_allows_multiple_inputs(tmp_path):
     )
     [t] = load_task_definitions(p)
     assert t.input_image_paths == [img1, img2]
+
+
+# ── vote mode ────────────────────────────────────────────────────────────────
+
+
+def _vote_entry(tmp_path, img_id: str, label: str) -> dict:
+    return {
+        "id": img_id,
+        "path": _make_input(tmp_path, f"{img_id}.png"),
+        "label": label,
+    }
+
+
+def test_load_vote_task(tmp_path):
+    images = [
+        _vote_entry(tmp_path, "i1", "real"),
+        _vote_entry(tmp_path, "i2", "synthetic"),
+    ]
+    p = _write_tasks(
+        tmp_path,
+        [
+            {
+                "id": "vote1",
+                "title": "Vote",
+                "description": "d",
+                "mode": "vote",
+                "vote_images": images,
+            }
+        ],
+    )
+    [t] = load_task_definitions(p)
+    assert t.mode == "vote"
+    assert [vi.id for vi in t.vote_images] == ["i1", "i2"]
+    assert t.vote_images[0].label == "real"
+    assert t.vote_images[0].sort_order == 0
+
+
+def test_vote_task_requires_images(tmp_path):
+    p = _write_tasks(
+        tmp_path,
+        [
+            {
+                "id": "vote1",
+                "title": "Vote",
+                "description": "d",
+                "mode": "vote",
+                "vote_images": [],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="non-empty 'vote_images'"):
+        load_task_definitions(p)
+
+
+def test_vote_task_rejects_bad_label(tmp_path):
+    p = _write_tasks(
+        tmp_path,
+        [
+            {
+                "id": "vote1",
+                "title": "Vote",
+                "description": "d",
+                "mode": "vote",
+                "vote_images": [_vote_entry(tmp_path, "i1", "fake")],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="invalid label"):
+        load_task_definitions(p)
+
+
+def test_vote_task_rejects_duplicate_image_id(tmp_path):
+    p = _write_tasks(
+        tmp_path,
+        [
+            {
+                "id": "vote1",
+                "title": "Vote",
+                "description": "d",
+                "mode": "vote",
+                "vote_images": [
+                    _vote_entry(tmp_path, "i1", "real"),
+                    {
+                        "id": "i1",
+                        "path": _make_input(tmp_path, "dup.png"),
+                        "label": "synthetic",
+                    },
+                ],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="duplicate vote image"):
+        load_task_definitions(p)
+
+
+def test_vote_task_rejects_missing_file(tmp_path):
+    p = _write_tasks(
+        tmp_path,
+        [
+            {
+                "id": "vote1",
+                "title": "Vote",
+                "description": "d",
+                "mode": "vote",
+                "vote_images": [
+                    {"id": "i1", "path": str(tmp_path / "nope.png"), "label": "real"}
+                ],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="not found"):
+        load_task_definitions(p)
+
+
+def test_non_vote_task_rejects_vote_images(tmp_path):
+    p = _write_tasks(
+        tmp_path,
+        [
+            {
+                "id": "b1",
+                "title": "Business",
+                "description": "d",
+                "mode": "business",
+                "vote_images": [_vote_entry(tmp_path, "i1", "real")],
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="only valid for mode 'vote'"):
+        load_task_definitions(p)
+
+
+def test_sync_populates_vote_images(tmp_path):
+    from genai_cv_game.db import get_vote_images
+
+    images = [
+        _vote_entry(tmp_path, "i1", "real"),
+        _vote_entry(tmp_path, "i2", "synthetic"),
+    ]
+    p = _write_tasks(
+        tmp_path,
+        [
+            {
+                "id": "vote1",
+                "title": "Vote",
+                "description": "d",
+                "mode": "vote",
+                "vote_images": images,
+            }
+        ],
+    )
+    db = tmp_path / "app.db"
+    sync_tasks_from_json(p, db)
+    rows = get_vote_images(db, "vote1")
+    assert [r.id for r in rows] == ["i1", "i2"]
+    assert rows[1].label == "synthetic"

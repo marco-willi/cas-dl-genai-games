@@ -21,7 +21,7 @@ class AppSettings(BaseModel):
     generated_dir: Path
     assets_dir: Path
     use_stub_generation: bool
-    generation_budget: int = Field(default=3, ge=1, le=20)
+    generation_budget: int = Field(default=3, ge=1, le=100)
 
 
 def load_settings() -> AppSettings:
@@ -49,6 +49,7 @@ def ensure_directories(settings: AppSettings) -> None:
     settings.generated_dir.mkdir(parents=True, exist_ok=True)
     (settings.assets_dir / "target_images").mkdir(parents=True, exist_ok=True)
     (settings.assets_dir / "placeholder").mkdir(parents=True, exist_ok=True)
+    (settings.assets_dir / "vote_images").mkdir(parents=True, exist_ok=True)
     (settings.assets_dir / "input_images" / "edit").mkdir(parents=True, exist_ok=True)
     (settings.assets_dir / "input_images" / "compose").mkdir(
         parents=True, exist_ok=True

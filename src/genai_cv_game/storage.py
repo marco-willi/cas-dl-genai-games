@@ -7,7 +7,11 @@ from pathlib import Path
 
 import requests
 
-from genai_cv_game.db import get_gallery_generations
+from genai_cv_game.db import (
+    get_gallery_generations,
+    get_vote_images,
+    get_vote_tallies,
+)
 
 
 def make_submission_image_path(
@@ -90,4 +94,38 @@ def export_gallery_csv(db_path: Path, task_id: str, task_title: str = "") -> byt
         row = g.model_dump()
         row["task_title"] = task_title
         writer.writerow(row)
+    return buf.getvalue().encode()
+
+
+def export_votes_csv(db_path: Path, task_id: str, task_title: str = "") -> bytes:
+    """Per-image vote tally for a vote-mode task: counts and true label."""
+    images = get_vote_images(db_path, task_id)
+    tallies = get_vote_tallies(db_path, task_id)
+    fields = [
+        "task_id",
+        "task_title",
+        "image_id",
+        "image_path",
+        "true_label",
+        "real_votes",
+        "synthetic_votes",
+        "total_votes",
+    ]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for img in images:
+        tally = tallies.get(img.id, {"real": 0, "synthetic": 0})
+        writer.writerow(
+            {
+                "task_id": task_id,
+                "task_title": task_title,
+                "image_id": img.id,
+                "image_path": img.image_path,
+                "true_label": img.label,
+                "real_votes": tally["real"],
+                "synthetic_votes": tally["synthetic"],
+                "total_votes": tally["real"] + tally["synthetic"],
+            }
+        )
     return buf.getvalue().encode()

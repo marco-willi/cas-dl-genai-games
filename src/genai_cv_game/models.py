@@ -47,6 +47,7 @@ class Task(BaseModel):
     input_image_paths: list[str] = []
     vote_images: list[VoteImage] = []
     is_available: bool = True
+    sort_order: int = 0
     created_at: str = ""
     updated_at: str = ""
 

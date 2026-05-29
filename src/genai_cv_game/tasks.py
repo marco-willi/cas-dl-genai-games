@@ -20,7 +20,7 @@ def load_task_definitions(tasks_path: Path) -> list[Task]:
 
     tasks = []
     seen_ids: set[str] = set()
-    for item in items:
+    for order, item in enumerate(items):
         for field in ("id", "title", "description", "mode"):
             if field not in item or not item[field]:
                 raise ValueError(f"Task entry missing required field '{field}': {item}")
@@ -68,6 +68,7 @@ def load_task_definitions(tasks_path: Path) -> list[Task]:
                 target_image_path=item.get("target_image_path"),
                 input_image_paths=input_image_paths,
                 vote_images=vote_images,
+                sort_order=order,
             )
         )
 

@@ -44,6 +44,7 @@ def create_tables(db_path: Path) -> None:
                 target_image_path  TEXT,
                 input_image_paths  TEXT NOT NULL DEFAULT '[]',
                 is_available       INTEGER NOT NULL DEFAULT 1,
+                sort_order         INTEGER NOT NULL DEFAULT 0,
                 created_at         TEXT NOT NULL,
                 updated_at         TEXT NOT NULL
             );
@@ -101,11 +102,35 @@ def create_tables(db_path: Path) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_votes_image_user
                 ON votes (task_id, image_id, LOWER(user_name));
         """)
+        _migrate_tasks_sort_order(conn)
         conn.execute(
             "INSERT OR IGNORE INTO app_settings (key, value, updated_at) "
             "VALUES (?, '1', ?)",
             (_API_ENABLED_KEY, now_utc()),
         )
+
+
+def _migrate_tasks_sort_order(conn: sqlite3.Connection) -> None:
+    """Add the tasks.sort_order column to pre-existing databases.
+
+    `CREATE TABLE IF NOT EXISTS` leaves an already-created table untouched, so
+    older DBs need the column added explicitly. Existing rows are back-filled by
+    `created_at` so their order is preserved until the next JSON sync.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "sort_order" in columns:
+        return
+    conn.execute("ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+    conn.execute(
+        """
+        WITH ordered AS (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY created_at) - 1 AS rn
+            FROM tasks
+        )
+        UPDATE tasks
+        SET sort_order = (SELECT rn FROM ordered WHERE ordered.id = tasks.id)
+        """
+    )
 
 
 # ── Tasks ───────────────────────────────────────────────────────────────────
@@ -119,12 +144,12 @@ def insert_or_update_task(db_path: Path, task: Task) -> None:
             """
             INSERT INTO tasks (
                 id, title, description, mode,
-                target_image_path, input_image_paths,
+                target_image_path, input_image_paths, sort_order,
                 created_at, updated_at
             )
             VALUES (
                 :id, :title, :description, :mode,
-                :target_image_path, :input_image_paths,
+                :target_image_path, :input_image_paths, :sort_order,
                 :ts, :ts
             )
             ON CONFLICT(id) DO UPDATE SET
@@ -133,6 +158,7 @@ def insert_or_update_task(db_path: Path, task: Task) -> None:
                 mode              = excluded.mode,
                 target_image_path = excluded.target_image_path,
                 input_image_paths = excluded.input_image_paths,
+                sort_order        = excluded.sort_order,
                 updated_at        = excluded.updated_at
             """,
             {
@@ -142,6 +168,7 @@ def insert_or_update_task(db_path: Path, task: Task) -> None:
                 "mode": task.mode,
                 "target_image_path": task.target_image_path,
                 "input_image_paths": json.dumps(task.input_image_paths),
+                "sort_order": task.sort_order,
                 "ts": ts,
             },
         )
@@ -149,14 +176,16 @@ def insert_or_update_task(db_path: Path, task: Task) -> None:
 
 def get_all_tasks(db_path: Path) -> list[Task]:
     with get_connection(db_path) as conn:
-        rows = conn.execute("SELECT * FROM tasks ORDER BY created_at").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM tasks ORDER BY sort_order, created_at"
+        ).fetchall()
     return [_row_to_task(r) for r in rows]
 
 
 def get_available_tasks(db_path: Path) -> list[Task]:
     with get_connection(db_path) as conn:
         rows = conn.execute(
-            "SELECT * FROM tasks WHERE is_available=1 ORDER BY created_at"
+            "SELECT * FROM tasks WHERE is_available=1 ORDER BY sort_order, created_at"
         ).fetchall()
     return [_row_to_task(r) for r in rows]
 
@@ -575,6 +604,7 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         target_image_path=row["target_image_path"],
         input_image_paths=json.loads(raw_inputs),
         is_available=bool(row["is_available"]),
+        sort_order=row["sort_order"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

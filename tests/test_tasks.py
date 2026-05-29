@@ -115,6 +115,30 @@ def test_sync_creates_tables(tmp_path):
     assert len(get_all_tasks(db)) == 2
 
 
+def test_load_assigns_sort_order_from_json_position(tmp_path):
+    p = _write_tasks(tmp_path, _VALID)
+    tasks = load_task_definitions(p)
+    assert [t.sort_order for t in tasks] == [0, 1]
+
+
+def test_sync_orders_tasks_by_json_position(tmp_path):
+    p = _write_tasks(tmp_path, _VALID)
+    db = tmp_path / "app.db"
+    sync_tasks_from_json(p, db)
+    assert [t.id for t in get_all_tasks(db)] == ["b1", "m1"]
+    assert [t.id for t in get_available_tasks(db)] == ["b1", "m1"]
+
+
+def test_resync_reorders_existing_tasks(tmp_path):
+    db = tmp_path / "app.db"
+    sync_tasks_from_json(_write_tasks(tmp_path, _VALID), db)
+
+    # Reverse the JSON order and re-sync; the GUI order must follow the JSON,
+    # not the original insertion (created_at) order.
+    sync_tasks_from_json(_write_tasks(tmp_path, list(reversed(_VALID))), db)
+    assert [t.id for t in get_all_tasks(db)] == ["m1", "b1"]
+
+
 # ── edit / compose modes ────────────────────────────────────────────────────
 
 

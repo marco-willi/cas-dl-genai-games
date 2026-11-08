@@ -94,7 +94,7 @@ def test_fan_out_creates_one_row_per_model(tmp_path):
     # Mirrors the comparison-mode fan-out: one prompt, one row per model.
     db = _setup(tmp_path)
     slugs = [
-        "google/imagen-4",
+        "ideogram-ai/ideogram-v3-turbo",
         "black-forest-labs/flux-1.1-pro",
         "bytedance/seedream-4",
     ]
@@ -227,3 +227,136 @@ def test_reset_all_generations_wipes_everything(tmp_path):
     reset_all_generations(db)
     assert get_user_generations(db, "t1", "Alice") == []
     assert get_user_generations(db, "t2", "Bob") == []
+
+
+def _completed(db, user="Alice", tid="t1"):
+    gid = create_generation(db, tid, user, "p", generation_budget=3)
+    update_generation_status(db, gid, "completed", image_path="x.png")
+    return gid
+
+
+def test_hide_from_gallery_removes_entry_and_flags_row(tmp_path):
+    from genai_cv_game.db import hide_from_gallery
+
+    db = _setup(tmp_path)
+    gid = _completed(db)
+    submit_to_gallery(db, gid)
+    hide_from_gallery(db, gid)
+    assert get_gallery_generations(db, "t1") == []
+    (row,) = get_user_generations(db, "t1", "Alice")
+    assert row.hidden is True
+    assert row.in_gallery is False
+
+
+def test_hidden_generation_cannot_be_reshared(tmp_path):
+    from genai_cv_game.db import hide_from_gallery
+
+    db = _setup(tmp_path)
+    gid = _completed(db)
+    hide_from_gallery(db, gid)
+    with pytest.raises(ValueError, match="hidden"):
+        submit_to_gallery(db, gid)
+
+
+def test_hiding_one_generation_leaves_siblings_shareable(tmp_path):
+    from genai_cv_game.db import hide_from_gallery
+
+    db = _setup(tmp_path)
+    bad = _completed(db)
+    good = _completed(db)
+    hide_from_gallery(db, bad)
+    submit_to_gallery(db, good)
+    assert [g.id for g in get_gallery_generations(db, "t1")] == [good]
+
+
+def test_migration_adds_hidden_column_to_old_db(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE generations (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, "
+        "user_name TEXT NOT NULL, prompt TEXT NOT NULL, image_path TEXT, "
+        "status TEXT NOT NULL, error_message TEXT, prediction_id TEXT, "
+        "model_slug TEXT, in_gallery INTEGER NOT NULL DEFAULT 0, "
+        "created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+    )
+    conn.commit()
+    conn.close()
+    init_db(db)
+    insert_or_update_task(db, _task())
+    gid = _completed(db)
+    (row,) = get_user_generations(db, "t1", "Alice")
+    assert row.id == gid and row.hidden is False
+
+
+# ── Multiple gallery picks (tasks.gallery_picks) ─────────────────────────────
+
+
+def test_two_picks_kept_third_replaces_oldest(tmp_path):
+    import time
+
+    db = _setup(tmp_path)
+    g1, g2, g3 = (_completed(db) for _ in range(3))
+    submit_to_gallery(db, g1, max_entries=2)
+    time.sleep(0.01)
+    submit_to_gallery(db, g2, max_entries=2)
+    assert {g.id for g in get_gallery_generations(db, "t1")} == {g1, g2}
+    time.sleep(0.01)
+    submit_to_gallery(db, g3, max_entries=2)
+    assert {g.id for g in get_gallery_generations(db, "t1")} == {g2, g3}
+
+
+def test_resharing_a_pick_is_a_no_op(tmp_path):
+    db = _setup(tmp_path)
+    g1, g2 = _completed(db), _completed(db)
+    submit_to_gallery(db, g1, max_entries=2)
+    submit_to_gallery(db, g2, max_entries=2)
+    submit_to_gallery(db, g2, max_entries=2)
+    assert {g.id for g in get_gallery_generations(db, "t1")} == {g1, g2}
+
+
+def test_picks_are_per_user(tmp_path):
+    db = _setup(tmp_path)
+    a = _completed(db, user="Alice")
+    b = _completed(db, user="Bob")
+    submit_to_gallery(db, a, max_entries=1)
+    submit_to_gallery(db, b, max_entries=1)
+    assert {g.id for g in get_gallery_generations(db, "t1")} == {a, b}
+
+
+def test_gallery_picks_stored_on_task(tmp_path):
+    from genai_cv_game.db import get_task
+
+    db = tmp_path / "app.db"
+    init_db(db)
+    insert_or_update_task(
+        db, Task(id="y", title="Y", description="d", mode="text2img", gallery_picks=2)
+    )
+    assert get_task(db, "y").gallery_picks == 2
+
+
+def test_old_unique_gallery_index_is_dropped(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE generations (id TEXT PRIMARY KEY, task_id TEXT NOT NULL,
+            user_name TEXT NOT NULL, prompt TEXT NOT NULL, image_path TEXT,
+            status TEXT NOT NULL, error_message TEXT, prediction_id TEXT,
+            model_slug TEXT, in_gallery INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE UNIQUE INDEX idx_generations_gallery_task_user
+            ON generations (task_id, LOWER(user_name)) WHERE in_gallery=1;
+        """
+    )
+    conn.commit()
+    conn.close()
+    init_db(db)
+    insert_or_update_task(db, _task())
+    g1, g2 = _completed(db), _completed(db)
+    submit_to_gallery(db, g1, max_entries=2)
+    submit_to_gallery(db, g2, max_entries=2)  # would violate the old unique index
+    assert len(get_gallery_generations(db, "t1")) == 2

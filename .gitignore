@@ -5,7 +5,7 @@ logs/*
 
 data/*
 !data/.gitkeep
-!data/rounds.json
+!data/tasks.json
 !data/models.json
 data/app.db
 data/app.db-wal

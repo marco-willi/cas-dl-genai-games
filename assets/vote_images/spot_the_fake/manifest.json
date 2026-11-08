@@ -1,0 +1,86 @@
+[
+  {
+    "path": "assets/vote_images/spot_the_fake/albert-dera-ILip77SbmOE-unsplash.jpg",
+    "label": "real",
+    "hint": "",
+    "pair": "portrait",
+    "order": 1
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 22, 2026, 10_32_18 PM.png",
+    "label": "synthetic",
+    "hint": "**Very difficult.** Inspected at very high resolution, the generated portrait shows less realistic texture. At the resolution shown here it is almost impossible to tell. Careful: the slight imperfection of the buttons in the *real* photo can be misleading.",
+    "pair": "portrait",
+    "order": 1
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/hugo-sousa-m7_lccaGaYA-unsplash.jpg",
+    "label": "real",
+    "hint": "",
+    "pair": "houses",
+    "order": 4
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/Gemini_Generated_Image_vr6skcvr6skcvr6s.png",
+    "label": "synthetic",
+    "hint": "Read the signage: the text is weird. More generally, straight lines don't meet at the same vanishing point.",
+    "pair": "street",
+    "order": 5
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/omar-lopez-1qfy-jDc_jo-unsplash.jpg",
+    "label": "real",
+    "hint": "",
+    "pair": "group",
+    "order": 3
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 22, 2026, 10_44_43 PM.png",
+    "label": "synthetic",
+    "hint": "**An edit, not a new image.** The AI version was made by editing the real photo, and the only change is the colour of the hat. Telling the two apart is practically impossible — image editing can leave everything else untouched.",
+    "pair": "window",
+    "order": 6
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/pascal-meier-UYiesSO4FiM-unsplash.jpg",
+    "label": "real",
+    "hint": "",
+    "pair": "plane",
+    "order": 2
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 22, 2026, 10_53_51 PM.png",
+    "label": "synthetic",
+    "hint": "Look at the wiring and pipes on the facades: in the AI-generated version they don't look very realistic.",
+    "pair": "houses",
+    "order": 4
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/peter-noah-58qVxGi7slU-unsplash.jpg",
+    "label": "real",
+    "hint": "",
+    "pair": "street",
+    "order": 5
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 29, 2026, 02_47_50 PM.png",
+    "label": "synthetic",
+    "hint": "The main subject, the airplane, looks quite good. The giveaway is in the close-up details of the rest of the scene: they are not convincing enough and look less clean than in the real photo.",
+    "pair": "plane",
+    "order": 2
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/rayul-_M6gy9oHgII-unsplash.jpg",
+    "label": "real",
+    "hint": "",
+    "pair": "window",
+    "order": 6
+  },
+  {
+    "path": "assets/vote_images/spot_the_fake/ChatGPT Image May 29, 2026, 02_43_09 PM.png",
+    "label": "synthetic",
+    "hint": "Look at the people: the AI-generated version shows a bias towards prototypical beauty, and many of the persons are look-alikes.",
+    "pair": "group",
+    "order": 3
+  }
+]

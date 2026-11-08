@@ -195,13 +195,6 @@ def test_start_generation_uses_provided_model_slug(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "genai_cv_game.generation.replicate.Client", lambda api_token: fake_client
     )
-    captured = {}
-
-    def fake_resolve(client, model):
-        captured["model"] = model
-        return "v-from-" + model
-
-    monkeypatch.setattr("genai_cv_game.generation._resolve_version", fake_resolve)
 
     s = AppSettings(
         app_title="T",
@@ -217,7 +210,7 @@ def test_start_generation_uses_provided_model_slug(tmp_path, monkeypatch):
         use_stub_generation=False,
     )
     start_generation("p", "r1", "sub1", s, model_slug="x/chosen")
-    assert captured["model"] == "x/chosen"
+    assert fake_client.predictions.create.call_args.kwargs["model"] == "x/chosen"
 
 
 def test_start_generation_falls_back_to_default_model_when_slug_missing(
@@ -235,13 +228,6 @@ def test_start_generation_falls_back_to_default_model_when_slug_missing(
     monkeypatch.setattr(
         "genai_cv_game.generation.replicate.Client", lambda api_token: fake_client
     )
-    captured = {}
-
-    def fake_resolve(client, model):
-        captured["model"] = model
-        return "v"
-
-    monkeypatch.setattr("genai_cv_game.generation._resolve_version", fake_resolve)
 
     s = AppSettings(
         app_title="T",
@@ -257,7 +243,7 @@ def test_start_generation_falls_back_to_default_model_when_slug_missing(
         use_stub_generation=False,
     )
     start_generation("p", "r1", "sub1", s)
-    assert captured["model"] == "default/model"
+    assert fake_client.predictions.create.call_args.kwargs["model"] == "default/model"
 
 
 def test_start_generation_errors_when_no_model_anywhere(tmp_path):

@@ -1,0 +1,22 @@
+# "Classroom" — warm, light and playful. Rounded shapes, friendly type.
+[theme]
+base = "light"
+primaryColor = "#E8590C"
+backgroundColor = "#FFFBF5"
+secondaryBackgroundColor = "#FFF1E3"
+textColor = "#2B2118"
+linkColor = "#C2410C"
+borderColor = "#F1DCC6"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "12px"
+buttonRadius = "full"
+font = "'Nunito':https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+headingFont = "'Fredoka':https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&display=swap"
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+chartCategoricalColors = ["#E8590C", "#7C3AED", "#0EA5E9", "#16A34A", "#DB2777", "#CA8A04"]
+
+[theme.sidebar]
+backgroundColor = "#FFF4E8"
+secondaryBackgroundColor = "#FFE8D1"
+borderColor = "#F1DCC6"

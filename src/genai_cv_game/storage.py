@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 import requests
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from genai_cv_game.db import (
     get_gallery_generations,
@@ -24,23 +25,38 @@ def make_submission_image_path(
     return path
 
 
+UPLOAD_MAX_EDGE = 1536
+
+
 def save_uploaded_input_image(
     generated_dir: Path,
     task_id: str,
     generation_id: str,
     data: bytes,
-    suffix: str,
 ) -> Path:
     """Persist a student-uploaded source image next to its generation.
 
     Used by explore-mode tasks, where the image to edit comes from a file
-    upload rather than a path declared in the task. The saved file is then
-    handed to `start_generation` as the model's image input.
+    upload. The image is re-encoded: EXIF orientation applied, downscaled to
+    `UPLOAD_MAX_EDGE` on the long side, and metadata (incl. GPS) dropped.
+    Images with transparency are kept as PNG, everything else becomes JPEG.
+    Raises ValueError if the bytes are not a readable image.
     """
-    suffix = suffix if suffix.startswith(".") else f".{suffix}"
-    dest = generated_dir / task_id / f"{generation_id}_input{suffix}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
+    try:
+        with Image.open(io.BytesIO(data)) as raw:
+            im = ImageOps.exif_transpose(raw)
+            im.thumbnail((UPLOAD_MAX_EDGE, UPLOAD_MAX_EDGE), Image.Resampling.LANCZOS)
+            has_alpha = im.mode in ("RGBA", "LA") or "transparency" in im.info
+            dest_dir = generated_dir / task_id
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            if has_alpha:
+                dest = dest_dir / f"{generation_id}_input.png"
+                im.convert("RGBA").save(dest, "PNG", optimize=True)
+            else:
+                dest = dest_dir / f"{generation_id}_input.jpg"
+                im.convert("RGB").save(dest, "JPEG", quality=90)
+    except (UnidentifiedImageError, OSError) as e:
+        raise ValueError(f"Could not read the uploaded image: {e}") from e
     return dest
 
 

@@ -40,7 +40,7 @@ def test_load_valid_tasks(tmp_path):
     tasks = load_task_definitions(p)
     assert len(tasks) == 2
     assert tasks[0].id == "b1"
-    assert tasks[0].mode == "business"
+    assert tasks[0].mode == "text2img"  # legacy "business" is an alias
     assert tasks[1].id == "m1"
     assert tasks[1].target_image_path == "assets/img.jpg"
 
@@ -427,3 +427,28 @@ def test_sync_populates_vote_images(tmp_path):
     rows = get_vote_images(db, "vote1")
     assert [r.id for r in rows] == ["i1", "i2"]
     assert rows[1].label == "synthetic"
+
+
+def test_gallery_picks_validated(tmp_path):
+    def write(picks):
+        path = tmp_path / "tasks.json"
+        path.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "t",
+                        "title": "T",
+                        "description": "d",
+                        "mode": "text2img",
+                        "gallery_picks": picks,
+                    }
+                ]
+            )
+        )
+        return path
+
+    assert load_task_definitions(write(2))[0].gallery_picks == 2
+    with pytest.raises(ValueError):
+        load_task_definitions(write(0))
+    with pytest.raises(ValueError):
+        load_task_definitions(write(9))

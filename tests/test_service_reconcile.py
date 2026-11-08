@@ -1,4 +1,4 @@
-"""Tests for the student-view generation reconciliation logic.
+"""Tests for the generation reconciliation logic (service.reconcile_generation).
 
 Covers the regression where pending in-flight generations must not be marked
 failed while they are still actually running, but should be:
@@ -6,7 +6,7 @@ failed while they are still actually running, but should be:
   - failed once the prediction backend reports failure or the timeout passes.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from genai_cv_game.config import AppSettings
@@ -18,7 +18,8 @@ from genai_cv_game.db import (
     set_generation_prediction,
 )
 from genai_cv_game.models import Task
-from genai_cv_game.ui.student import _PENDING_TIMEOUT_SECONDS, _reconcile_generation
+from genai_cv_game.service import PENDING_TIMEOUT_SECONDS as _PENDING_TIMEOUT_SECONDS
+from genai_cv_game.service import reconcile_generation as _reconcile_generation
 
 
 def _settings(tmp_path: Path) -> AppSettings:
@@ -44,9 +45,7 @@ def _setup(tmp_path: Path):
     insert_or_update_task(
         s.db_path, Task(id="t1", title="T", description="d", mode="business")
     )
-    gen_id = create_generation(
-        s.db_path, "t1", "Alice", "prompt", s.generation_budget
-    )
+    gen_id = create_generation(s.db_path, "t1", "Alice", "prompt", s.generation_budget)
     gen = get_user_generations(s.db_path, "t1", "Alice")[0]
     return s, gen, gen_id
 
@@ -54,7 +53,7 @@ def _setup(tmp_path: Path):
 def _shift_updated_at(db_path: Path, gen_id: str, seconds_ago: int) -> None:
     import sqlite3
 
-    ts = (datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)).isoformat()
+    ts = (datetime.now(UTC) - timedelta(seconds=seconds_ago)).isoformat()
     conn = sqlite3.connect(db_path)
     conn.execute("UPDATE generations SET updated_at=? WHERE id=?", (ts, gen_id))
     conn.commit()
@@ -114,8 +113,8 @@ def test_pending_with_prediction_id_polls_and_succeeds(tmp_path, monkeypatch):
     img_path.write_bytes(b"\x89PNG fake")
 
     monkeypatch.setattr(
-        "genai_cv_game.ui.student.poll_generation",
-        lambda *a, **kw: GenerationResult(status="succeeded", image_path=str(img_path)),
+        "genai_cv_game.service.poll_generation",
+        lambda *a, **kw: GenerationResult(status="completed", image_path=str(img_path)),
     )
 
     result = _reconcile_generation(gen, s)
@@ -133,7 +132,7 @@ def test_pending_with_prediction_id_still_processing_stays_pending(
     gen = get_user_generations(s.db_path, "t1", "Alice")[0]
 
     monkeypatch.setattr(
-        "genai_cv_game.ui.student.poll_generation",
+        "genai_cv_game.service.poll_generation",
         lambda *a, **kw: GenerationResult(status="pending"),
     )
 
@@ -149,7 +148,7 @@ def test_pending_with_prediction_id_failed_marks_failed(tmp_path, monkeypatch):
     gen = get_user_generations(s.db_path, "t1", "Alice")[0]
 
     monkeypatch.setattr(
-        "genai_cv_game.ui.student.poll_generation",
+        "genai_cv_game.service.poll_generation",
         lambda *a, **kw: GenerationResult(status="failed", error="model died"),
     )
 

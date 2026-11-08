@@ -1,0 +1,35 @@
+# "Lab" — clean and technical, with the light/dark toggle kept for students.
+[theme]
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "6px"
+buttonRadius = "6px"
+font = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "'Space Grotesk':https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+
+[theme.light]
+primaryColor = "#0D9488"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F7F7"
+textColor = "#0F1A1A"
+linkColor = "#0F766E"
+borderColor = "#DDE6E5"
+chartCategoricalColors = ["#0D9488", "#6366F1", "#F59E0B", "#EF4444", "#0EA5E9", "#84CC16"]
+
+[theme.dark]
+primaryColor = "#2DD4BF"
+backgroundColor = "#0B1414"
+secondaryBackgroundColor = "#122020"
+textColor = "#E6F0EF"
+linkColor = "#5EEAD4"
+borderColor = "#1F3433"
+chartCategoricalColors = ["#2DD4BF", "#818CF8", "#FBBF24", "#F87171", "#38BDF8", "#A3E635"]
+
+[theme.light.sidebar]
+backgroundColor = "#F4F7F7"
+borderColor = "#DDE6E5"
+
+[theme.dark.sidebar]
+backgroundColor = "#081010"
+borderColor = "#1F3433"

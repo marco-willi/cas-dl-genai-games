@@ -28,8 +28,9 @@ Trade-offs to be aware of:
 - The app sleeps after periods of inactivity. The first request after sleep
   takes ~30 s to wake. Open the URL yourself a minute before class starts.
 - Community Cloud apps deployed from a public repo are publicly reachable.
-  Anyone with the URL can open the student view. The admin sidebar is
-  protected by `INSTRUCTOR_PASSCODE` — set a strong one (see below).
+  Anyone with the URL reaches the sign-in page; students need the class
+  passcode (`APP_PASSCODE`), and the Admin/Projector pages are protected by
+  `INSTRUCTOR_PASSCODE` — set strong ones (see below).
 
 ---
 
@@ -42,7 +43,8 @@ Trade-offs to be aware of:
   owns (or has access to) the repo.
 - A **Replicate API token** with credit available
   ([replicate.com/account/api-tokens](https://replicate.com/account/api-tokens)).
-- A chosen Replicate model reference, e.g. `google/imagen-4-fast`.
+- The models students can pick are listed in `data/models.json`; make sure
+  they are still available on Replicate (see *Model catalog* in the README).
 
 ---
 
@@ -79,39 +81,47 @@ as environment variables at runtime, which is exactly what the app reads via
 
 ```toml
 REPLICATE_API_TOKEN = "r8_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+APP_PASSCODE = "the-passcode-you-tell-students"
 INSTRUCTOR_PASSCODE = "pick-something-students-cannot-guess"
-DEFAULT_REPLICATE_MODEL = "google/imagen-4-fast"
 APP_TITLE = "Generative AI CV Classroom Game"
 USE_STUB_GENERATION = "false"
+GENERATION_BUDGET = "30"
+# Optional fallback, only used if models.json has no enabled model:
+# DEFAULT_REPLICATE_MODEL = "google/nano-banana-2"
 ```
 
 Notes:
 - Do **not** set `DB_PATH`, `TASKS_PATH`, `GENERATED_DIR`, or `ASSETS_DIR` —
   the defaults work and point inside the app's working directory.
-- Change `INSTRUCTOR_PASSCODE` from the default — anyone with the URL can try
-  to log into the admin sidebar.
+- Change both passcodes from the default `changeme` — anyone with the URL can
+  try them. The budget can also be changed live on the Admin page.
 - If you want to test the deployment without spending Replicate credit, set
   `USE_STUB_GENERATION = "true"` first; flip to `"false"` before class.
 
 ### 4. Deploy
 
-Click **Deploy**. The first build installs Poetry, resolves dependencies, and
+Click **Deploy**. The first build installs the dependencies (from `uv.lock`) and
 starts the app. This takes 3–5 minutes. Watch the logs in the right-hand
 panel; the app is live when you see `You can now view your Streamlit app`.
 
 ### 5. Smoke test before class
 
-1. Open the app URL.
-2. Confirm the title renders and the task picker lists the available tasks.
-3. In the sidebar, log in with `INSTRUCTOR_PASSCODE` (admin panel).
-4. Confirm the generation API switch is on, generate one test image as a
-   "student", and click **Show in gallery** to confirm it appears.
-5. Reset that task so students start clean.
+1. Open the app URL and sign in with a test name and `APP_PASSCODE`.
+2. Confirm the Home page and the sidebar list the expected tasks.
+3. Open **Admin** (sidebar, *Instructor*) and enter `INSTRUCTOR_PASSCODE`.
+   Check: generation switch on, budget as intended, vote results **not**
+   revealed, the right tasks available.
+4. Generate one real image per model you plan to use — for image-editing
+   models, on an edit task, and check the result actually resembles the
+   source (a wrong `image_input_field` is silently ignored). Share one to the
+   gallery to confirm it appears.
+5. Reset the tasks you used (*Data resets*) so students start clean.
 
 ### 6. Share the URL
 
 Send students the app URL (e.g. `https://genai-cv-class.streamlit.app`). They
-do **not** need accounts; they just open the link, enter a name, and start.
+do **not** need accounts; they open the link, enter a name and the class
+passcode, and start. Ask them to reuse the same name if they reload the page.
 
 ---
 
@@ -120,16 +130,18 @@ do **not** need accounts; they just open the link, enter a name, and start.
 - Keep the Streamlit Cloud dashboard open in another tab — you can see live
   logs there if something misbehaves.
 - If the app gets stuck, **Reboot app** from the dashboard. Be aware this
-  wipes the database; only use it if you are willing to lose current galleries.
-- The admin controls (global API switch, task availability, gallery resets,
-  CSV export) all run in the sidebar — same workflow as local.
+  wipes the database — galleries, votes, and Admin settings such as the
+  budget override and vote reveals; only use it if you are willing to lose them.
+- The admin controls (generation switch, budget, vote reveal, task
+  availability, resets, CSV export) live on the **Admin** page; the
+  **Projector** page shows a gallery or vote results on the beamer — same as local.
 
 ---
 
 ## Export results
 
-Before tearing the app down, use the **Download gallery CSV** button in
-the admin sidebar for each task you want to keep. The CSV is downloaded
+Before tearing the app down, use **Export** on the Admin page (gallery CSV,
+or vote results CSV for vote tasks) for each task you want to keep. The CSV is downloaded
 to your local machine, so it survives the app's deletion.
 
 Generated image files live on the Cloud filesystem and **will be lost** when
@@ -164,14 +176,15 @@ The project requires Python 3.14. Set it under *Advanced settings → Python
 version* before deploying. If you forgot, edit the app settings and reboot.
 
 **App boots but every generation fails**
-Check that `REPLICATE_API_TOKEN` and `DEFAULT_REPLICATE_MODEL` are set in the
-Secrets panel and that the Replicate account has credit. Logs in the Cloud
-dashboard show the underlying error.
+Check that `REPLICATE_API_TOKEN` is set in the Secrets panel and that the
+Replicate account has credit. Logs in the Cloud dashboard show the underlying
+error. If only one model fails with *"Version disabled"* (422), it was
+discontinued — replace it in `data/models.json`.
 
 **"No tasks are available" on first load**
 The DB is created and tasks are synced from `data/tasks.json` at startup.
 If you see this, the sync did not run or all tasks are toggled off — reboot
-the app from the dashboard and check task availability in the admin panel.
+the app from the dashboard and check task availability on the Admin page.
 
 **App is slow to respond when class starts**
 It probably went to sleep. Open the URL yourself 1–2 minutes before students
@@ -180,7 +193,7 @@ do; the first request wakes it.
 **Need to deploy somewhere else**
 If Community Cloud is not an option (e.g. private classroom network), the app
 is a plain Streamlit + SQLite process. Anywhere that runs Python 3.14 and
-exposes port `8501` will work: a single VM with `poetry run streamlit run
+exposes port `8501` will work: a single VM with `uv run streamlit run
 app.py`, a small Cloud Run container, etc. Set the same env vars as in the
 Secrets block above. The same ephemeral-storage caveats apply unless you mount
 a persistent volume.

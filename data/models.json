@@ -1,9 +1,10 @@
 [
   {
-    "id": "imagen-4",
-    "slug": "google/imagen-4",
-    "display_name": "Google Imagen 4",
-    "description": "Strong general-purpose photorealism. Default for class.",
+    "id": "ideogram-v3-turbo",
+    "slug": "ideogram-ai/ideogram-v3-turbo",
+    "display_name": "Ideogram 3 Turbo",
+    "description": "Fast; especially strong at rendering text (signs, posters, logos) in images.",
+    "supports_seed": true,
     "sort_order": 10
   },
   {
@@ -12,21 +13,26 @@
     "display_name": "Google Nano Banana 2",
     "description": "Smaller / faster Google model; good for quick iteration. Supports image input (edit / compose / free editing).",
     "supports_image_input": true,
-    "sort_order": 20
+    "sort_order": 20,
+    "image_input_field": "image_input"
   },
   {
-    "id": "flux-2-flex",
-    "slug": "black-forest-labs/flux-2-flex",
-    "display_name": "FLUX 2 Flex",
-    "description": "Flexible FLUX editing model; strong prompt adherence on image edits.",
+    "id": "flux-2-klein-4b",
+    "slug": "black-forest-labs/flux-2-klein-4b",
+    "display_name": "FLUX 2 Klein 4B",
+    "description": "Small, fast FLUX 2 model (4B parameters); generation and editing, accepts a seed.",
     "supports_image_input": true,
+    "image_input_field": "images",
+    "supports_seed": true,
     "sort_order": 25
   },
   {
-    "id": "seedream-4",
-    "slug": "bytedance/seedream-4",
-    "display_name": "ByteDance Seedream 4",
-    "description": "Stylised generation with strong composition.",
+    "id": "seedream-5-pro",
+    "slug": "bytedance/seedream-5-pro",
+    "display_name": "ByteDance Seedream 5 Pro",
+    "description": "ByteDance's Seedream 5 Pro: generation and editing with up to 10 reference images.",
+    "supports_image_input": true,
+    "image_input_field": "image_input",
     "sort_order": 30
   },
   {
@@ -35,13 +41,25 @@
     "display_name": "ByteDance Seedream 5 Lite",
     "description": "Lightweight Seedream editing model; fast, stylised edits.",
     "supports_image_input": true,
-    "sort_order": 35
+    "sort_order": 35,
+    "image_input_field": "image_input"
   },
   {
-    "id": "flux-1-1-pro",
-    "slug": "black-forest-labs/flux-1.1-pro",
-    "display_name": "FLUX 1.1 Pro",
-    "description": "High-fidelity FLUX variant; slower but sharp.",
+    "id": "flux-3-image",
+    "slug": "black-forest-labs/flux-3-image",
+    "display_name": "FLUX 3",
+    "description": "Black Forest Labs' FLUX 3: generation and editing with up to 10 reference images.",
+    "supports_image_input": true,
+    "image_input_field": "images",
     "sort_order": 40
+  },
+  {
+    "id": "gpt-image-2",
+    "slug": "openai/gpt-image-2",
+    "display_name": "OpenAI GPT Image 2",
+    "description": "OpenAI's image generation and editing model.",
+    "supports_image_input": true,
+    "image_input_field": "input_images",
+    "sort_order": 15
   }
 ]

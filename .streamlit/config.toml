@@ -1,0 +1,8 @@
+[server]
+# Uploads (explore tasks) are downscaled anyway; reject huge files early. MB.
+maxUploadSize = 10
+
+[theme]
+# Theme variants live in .streamlit/themes/ (classroom | studio | lab).
+# Switch with `make theme THEME=studio`. Path is relative to the repo root.
+base = ".streamlit/themes/classroom.toml"

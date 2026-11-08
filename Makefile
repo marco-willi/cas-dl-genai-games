@@ -17,20 +17,33 @@ help: ## Show all available commands
 
 .PHONY: install
 install: ## Install dependencies with dev extras
-	poetry install --with dev
+	uv sync
 
 .PHONY: run
 run: ## Start the Streamlit app
-	poetry run streamlit run app.py
+	uv run streamlit run app.py
 
 .PHONY: test
 test: ## Run tests
-	poetry run pytest tests/
+	uv run pytest tests/
 
 .PHONY: lint
 lint: ## Lint source and tests with ruff
-	poetry run ruff check src tests
+	uv run ruff check src tests
 
 .PHONY: format
 format: ## Format source and tests with ruff
-	poetry run ruff format src tests
+	uv run ruff format src tests
+
+THEME ?= classroom
+
+.PHONY: theme
+theme: ## Switch UI theme: make theme THEME=classroom|studio|lab
+	@test -f .streamlit/themes/$(THEME).toml || { echo "Unknown THEME '$(THEME)'. See .streamlit/themes/"; exit 1; }
+	sed -i 's|^base = ".streamlit/themes/.*"|base = ".streamlit/themes/$(THEME).toml"|' .streamlit/config.toml
+	@echo "Theme set to $(THEME). Refresh the browser (no restart needed)."
+
+.PHONY: vote-images
+vote-images: ## Re-encode + shuffle vote images from their manifest (originals untouched)
+	uv run python scripts/prepare_vote_images.py \
+		--manifest assets/vote_images/spot_the_fake/manifest.json --task-id spot_the_fake

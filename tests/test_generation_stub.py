@@ -25,7 +25,6 @@ from genai_cv_game.storage import (
     make_submission_image_path,
 )
 
-
 # ── storage ──────────────────────────────────────────────────────────────────
 
 
@@ -121,11 +120,11 @@ def test_stub_start_writes_image_and_returns_sentinel(tmp_path):
     assert expected.exists()
 
 
-def test_stub_poll_returns_succeeded(tmp_path):
+def test_stub_poll_returns_completed(tmp_path):
     s = _settings(tmp_path, stub=True)
     pred_id = start_generation("a prompt", "r1", "sub1", s)
     result = poll_generation(pred_id, "r1", "sub1", s)
-    assert result.status == "succeeded"
+    assert result.status == "completed"
     assert result.image_path is not None
     assert Path(result.image_path).exists()
 
@@ -165,15 +164,12 @@ def test_real_start_returns_prediction_id(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "genai_cv_game.generation.replicate.Client", lambda api_token: fake_client
     )
-    monkeypatch.setattr(
-        "genai_cv_game.generation._resolve_version", lambda client, model: "v1"
-    )
 
     s = _settings(tmp_path, stub=False, token="tok", model="some/model")
     pred_id = start_generation("a prompt", "r1", "sub1", s)
     assert pred_id == "pred_abc"
     fake_client.predictions.create.assert_called_once_with(
-        version="v1", input={"prompt": "a prompt"}
+        model="some/model", input={"prompt": "a prompt"}
     )
 
 
@@ -183,8 +179,8 @@ def test_real_start_with_image_input_passes_file_handles(tmp_path, monkeypatch):
 
     captured = {}
 
-    def fake_create(*, version, input):
-        captured["version"] = version
+    def fake_create(*, model, input):
+        captured["model"] = model
         captured["input"] = input
         fake_prediction = MagicMock()
         fake_prediction.id = "pred_img"
@@ -194,9 +190,6 @@ def test_real_start_with_image_input_passes_file_handles(tmp_path, monkeypatch):
     fake_client.predictions.create.side_effect = fake_create
     monkeypatch.setattr(
         "genai_cv_game.generation.replicate.Client", lambda api_token: fake_client
-    )
-    monkeypatch.setattr(
-        "genai_cv_game.generation._resolve_version", lambda client, model: "v1"
     )
 
     s = _settings(tmp_path, stub=False, token="tok", model="some/model")
@@ -211,7 +204,7 @@ def test_real_start_with_image_input_passes_file_handles(tmp_path, monkeypatch):
 def test_real_start_without_image_input_omits_field(tmp_path, monkeypatch):
     captured = {}
 
-    def fake_create(*, version, input):
+    def fake_create(*, model, input):
         captured["input"] = input
         fake_prediction = MagicMock()
         fake_prediction.id = "pred_text"
@@ -221,9 +214,6 @@ def test_real_start_without_image_input_omits_field(tmp_path, monkeypatch):
     fake_client.predictions.create.side_effect = fake_create
     monkeypatch.setattr(
         "genai_cv_game.generation.replicate.Client", lambda api_token: fake_client
-    )
-    monkeypatch.setattr(
-        "genai_cv_game.generation._resolve_version", lambda client, model: "v1"
     )
 
     s = _settings(tmp_path, stub=False, token="tok", model="some/model")
@@ -236,9 +226,6 @@ def test_real_start_wraps_errors(tmp_path, monkeypatch):
     fake_client.predictions.create.side_effect = RuntimeError("boom")
     monkeypatch.setattr(
         "genai_cv_game.generation.replicate.Client", lambda api_token: fake_client
-    )
-    monkeypatch.setattr(
-        "genai_cv_game.generation._resolve_version", lambda client, model: "v1"
     )
 
     s = _settings(tmp_path, stub=False, token="tok", model="some/model")
@@ -280,7 +267,7 @@ def test_real_poll_succeeded_downloads_and_returns_path(tmp_path, monkeypatch):
 
     s = _settings(tmp_path, stub=False, token="tok", model="some/model")
     result = poll_generation("pred_abc", "r1", "sub1", s)
-    assert result.status == "succeeded"
+    assert result.status == "completed"
     assert result.image_path is not None
     assert Path(result.image_path).exists()
 

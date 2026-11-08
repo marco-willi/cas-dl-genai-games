@@ -161,6 +161,9 @@ def test_init_db_migrates_old_schema(tmp_path):
     init_db(db)
     task = get_task(db, "old")
     assert task is not None and task.mode == "text2img" and task.nav_title is None
+    # columns added later get their defaults on old rows
+    assert task.input_image_labels == {} and task.allow_text_only is False
+    assert task.gallery_picks == 1
     cols = {r[1] for r in sqlite3.connect(db).execute("PRAGMA table_info(vote_images)")}
     assert "hint" in cols
 
@@ -398,3 +401,36 @@ def test_prepare_script_respects_pair_order():
     for seed in range(10):
         ordered = prep._order([dict(e) for e in entries], random.Random(seed))
         assert [e["pair"] for e in ordered] == ["easy"] * 2 + ["mid"] * 2 + ["hard"] * 2
+
+
+# ── Thumbnails ───────────────────────────────────────────────────────────────
+
+
+def test_resize_to_max_width_downscales_and_keeps_aspect():
+    from genai_cv_game.storage import resize_to_max_width
+
+    buf = io.BytesIO()
+    Image.new("RGB", (2000, 3000), (10, 20, 30)).save(buf, "JPEG")
+    out = resize_to_max_width(buf.getvalue(), 510)
+    with Image.open(io.BytesIO(out)) as im:
+        assert im.size == (510, 765) and im.format == "JPEG"
+
+
+def test_resize_to_max_width_never_upscales():
+    from genai_cv_game.storage import resize_to_max_width
+
+    buf = io.BytesIO()
+    Image.new("RGB", (300, 200)).save(buf, "JPEG")
+    with Image.open(io.BytesIO(resize_to_max_width(buf.getvalue(), 900))) as im:
+        assert im.size == (300, 200)
+
+
+def test_resize_to_max_width_keeps_transparency_as_png_and_rejects_garbage():
+    from genai_cv_game.storage import resize_to_max_width
+
+    buf = io.BytesIO()
+    Image.new("RGBA", (800, 400), (0, 0, 0, 0)).save(buf, "PNG")
+    with Image.open(io.BytesIO(resize_to_max_width(buf.getvalue(), 200))) as im:
+        assert im.format == "PNG" and im.size == (200, 100)
+    with pytest.raises(ValueError, match="read the image"):
+        resize_to_max_width(b"not an image", 100)

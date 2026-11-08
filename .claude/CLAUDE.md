@@ -18,7 +18,6 @@ make lint / make format      # ruff
 uv run mypy src app.py       # type check (clean; slow here, ~1–2 min)
 make theme THEME=studio      # switch theme: classroom | studio | lab
 make vote-images             # re-encode + shuffle vote images from their manifest
-uv run python scripts/make_refund_inputs.py   # redraw the refund task's input images
 ```
 
 Python 3.14+, uv. `ruff format` may emit 3.14-only syntax (e.g. `except A, B:`).
@@ -54,14 +53,17 @@ src/genai_cv_game/
                                Before | After, likes, favourite, admin Hide; projector variant
   ui/vote.py                   vote page; pairs side by side; results hidden until reveal;
                                scores, leaderboard, per-pair hints
+  ui/zoom.py + zoom_image.{html,css,js}   inline CCv2 zoom component (hover zoom, full-screen
+                               viewer, pair sync); images come from static/, not via Streamlit
   ui/admin.py                  stats, API switch, budget, vote reveal, availability, resets,
                                export, wipe
   ui/projector.py              admin-only big-screen gallery / vote results
 data/tasks.json                task definitions (order = sidebar order)
 data/models.json               model catalog
 assets/vote_images/<task>/     original vote images + manifest.json (labels, pair, order, hints)
-assets/vote_images/<task>_clean/  normalised images actually used by tasks.json
-assets/input_images/refund/    receipt + placeholder food image (scripts/make_refund_inputs.py)
+static/vote_images/<task>/     page (1280 px) + `_zoom` (2048 px) versions used by tasks.json;
+                               served by Streamlit at /app/static/ (enableStaticServing)
+assets/input_images/refund/    prepared images of the refund task (+ source.txt with origins)
 scripts/prepare_vote_images.py normalise/shuffle vote images, rewrite tasks.json
 .streamlit/config.toml         upload limit + theme.base → .streamlit/themes/*.toml
 tests/                         pytest; test_service.py / test_features.py cover newer features
@@ -77,7 +79,8 @@ treat them as current.
 
 - **Modes** (`models.Mode`): `text2img` (alias `business`), `match`, `edit` (1 fixed
   input image), `compose` (≥1 fixed cut-out), `explore` (student upload, or pick one of
-  the task's `input_image_paths` — see `ui/student._render_source_picker`),
+  the task's `input_image_paths` with friendly `input_image_labels`, or — if `allow_text_only` —
+  plain text-to-image without a source; see `ui/student._render_source_picker`),
   `comparison` (one prompt → up to 4 models, shared `batch_id` = one round),
   `vote` (no generation). Capability sets (`FIXED_INPUT_MODES`, …) live in `models.py`.
 - **Generation lifecycle**: row `pending` → prediction id stored → polled by
@@ -97,6 +100,11 @@ treat them as current.
 - **Vote pairs**: `VoteImage.pair` groups a real photo with its AI recreation; adjacent in
   tasks.json (left/right = order), rendered side by side by `ui/vote._render_layout`;
   a pair's hint is shown once below it.
+- **Zoom**: vote images are rendered by `ui/zoom.zoom_image` (falls back to `st.image` when
+  static serving is off, not really served — probed over HTTP, the config alone can lie after
+  a config edit without restart — or the file is not below `static/`). Pairs share a `ZoomGroup`; `sync` only when
+  both images have the same aspect ratio. Every vote image must have the same pixel size
+  (script resizes exactly) so dimensions can't leak the label — never add images by hand.
 - **Vote reveal**: `app_settings` key `reveal:<task_id>`; reveal closes voting.
 - **Identity**: user name only, case-insensitive. No accounts (deliberate — see REVIEW.md S3).
 
@@ -105,6 +113,9 @@ treat them as current.
 - DB access only through `db.py`; one short-lived connection per call.
 - Business logic in `service.py` (no `st.*`); `ui/` only renders and calls it.
 - Escape any user-provided text rendered as Markdown with `md_escape`.
+- Never `st.image(..., width=<int>)` for small images: Streamlit shrinks the file server-side to exactly
+  that many pixels (bilinear) → blurry on retina screens. Use `ui.common.thumbnail(source, width)`
+  (supplies 3× pixels inside a container of that width). `width="stretch"` is fine.
 - Performance (every click reruns the script, so keep the per-rerun path cheap):
   - tasks.json → DB sync runs once per process (`_bootstrap` in `app.py`, `st.cache_resource`
     keyed on tasks.json mtime + DB existence); never call it per rerun.
@@ -122,6 +133,10 @@ treat them as current.
   `https://replicate.com/<owner>/<name>/llms.txt` (WebFetch on replicate.com is
   pre-allowed) — set `image_input_field` (wrong names are silently ignored) and
   `supports_seed` only if a `seed` input exists. Don't guess.
+- Custom JS: keep view math in pure functions at the top of `zoom_image.js`; they are tested
+  in QuickJS: `uv run --with quickjs pytest tests/test_zoom_math.py` (skipped otherwise).
+  There is no browser here — UI behaviour of the component itself is unverified until
+  someone opens it; say so.
 - Record user-facing decisions and larger changes in `REVIEW.md`.
 
 ## Verifying in the running app
@@ -131,7 +146,7 @@ would override stub mode and could make paid Replicate calls. Instead:
 
 ```bash
 SP=<scratchpad>; mkdir -p $SP/apprun
-tar --exclude='data/app.db*' -cf - app.py data assets .streamlit/config.toml .streamlit/themes \
+tar --exclude='data/app.db*' -cf - app.py data assets static .streamlit/config.toml .streamlit/themes \
   | tar -xf - -C $SP/apprun          # then confirm: no $SP/apprun/.streamlit/secrets.toml, no .env
 cd $SP/apprun && env -u REPLICATE_API_TOKEN USE_STUB_GENERATION=true APP_PASSCODE=class \
   INSTRUCTOR_PASSCODE=teach uv run --project /workspace streamlit run app.py \

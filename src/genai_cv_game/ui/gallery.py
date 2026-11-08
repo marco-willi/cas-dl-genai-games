@@ -22,6 +22,7 @@ from genai_cv_game.ui.common import (
     is_admin,
     model_caption,
     prompt_caption,
+    thumbnail,
 )
 from genai_cv_game.utils import md_escape
 
@@ -99,7 +100,7 @@ def _render_target_strip(task: Task) -> None:
     path = Path(task.target_image_path) if task.target_image_path else None
     if path and path.exists():
         with st.expander("Target image", icon=":material/target:", expanded=True):
-            st.image(asset_image(path) or str(path), width=360, alt="Target image")
+            thumbnail(path, 360, alt="Target image")
 
 
 def _render_card(

@@ -24,6 +24,7 @@ from genai_cv_game.db import (
 )
 from genai_cv_game.models import Task, VoteImage
 from genai_cv_game.ui.common import asset_image, current_user
+from genai_cv_game.ui.zoom import ZoomGroup, same_aspect, zoom_image
 from genai_cv_game.utils import md_escape, plural
 
 _RESULTS_REFRESH_SECONDS = 5
@@ -79,9 +80,10 @@ def _render_vote_grid(settings: AppSettings, task: Task) -> None:
 
     _render_layout(
         images,
-        lambda image: _render_vote_card(
-            settings, image, user_votes.get(image.id), locked=revealed
+        lambda image, zoom: _render_vote_card(
+            settings, image, user_votes.get(image.id), revealed, zoom
         ),
+        scope="vote",
     )
 
 
@@ -98,38 +100,57 @@ def _units(images: list[VoteImage]) -> list[list[VoteImage]]:
     return units
 
 
+def _zoom_groups(unit: list[VoteImage], scope: str) -> list[ZoomGroup]:
+    """Zoom groups for one display unit: a pair opens together in the viewer, and
+    its zoom/pan is linked when both images have the same framing (aspect)."""
+    gid = f"{scope}:{unit[0].task_id}:{unit[0].pair or unit[0].id}"
+    sync = len(unit) > 1 and all(
+        same_aspect(unit[0].image_path, i.image_path) for i in unit[1:]
+    )
+    return [ZoomGroup(gid, pos, sync) for pos in range(len(unit))]
+
+
 def _render_layout(
     images: list[VoteImage],
-    render_card: Callable[[VoteImage], None],
+    render_card: Callable[[VoteImage, ZoomGroup], None],
     footer: Callable[[list[VoteImage]], None] | None = None,
+    scope: str = "vote",
 ) -> None:
     """Pairs side by side (two pairs per row); plain grid if nothing is paired.
 
     `footer`, if given, is rendered once below each pair (e.g. the pair's hint).
+    `scope` keeps zoom groups and widget keys of different views apart.
     """
     units = _units(images)
     if all(len(u) == 1 for u in units):
         cols = st.columns(_GRID_WIDTH)
-        for i, image in enumerate(images):
+        for i, unit in enumerate(units):
             with cols[i % _GRID_WIDTH]:
-                render_card(image)
+                render_card(unit[0], _zoom_groups(unit, scope)[0])
         return
     outer = st.columns(_PAIRS_PER_ROW)
     for n, unit in enumerate(units):
         with outer[n % _PAIRS_PER_ROW], st.container(border=True):
             st.markdown(f"**Pair {n + 1}**" if len(unit) > 1 else "**Single image**")
-            for col, image in zip(st.columns(len(unit)), unit, strict=True):
+            groups = _zoom_groups(unit, scope)
+            for col, image, group in zip(
+                st.columns(len(unit)), unit, groups, strict=True
+            ):
                 with col:
-                    render_card(image)
+                    render_card(image, group)
             if footer is not None:
                 footer(unit)
 
 
 def _render_vote_card(
-    settings: AppSettings, image: VoteImage, current: str | None, locked: bool
+    settings: AppSettings,
+    image: VoteImage,
+    current: str | None,
+    locked: bool,
+    zoom: ZoomGroup,
 ) -> None:
     with st.container(border=True):
-        _image(image)
+        _image(image, zoom)
         with st.container(horizontal=True, gap="small"):
             for label, text, icon in (
                 ("real", "Real", ":material/photo_camera:"),
@@ -213,10 +234,11 @@ def render_vote_results(
     st.subheader("All images")
     _render_layout(
         images,
-        lambda image: _render_result_card(
-            image, tallies[image.id], my_votes.get(image.id)
+        lambda image, zoom: _render_result_card(
+            image, tallies[image.id], my_votes.get(image.id), zoom
         ),
         footer=_render_hint,
+        scope="results",
     )
 
 
@@ -318,10 +340,10 @@ def _render_score_histogram(scores: list, n_images: int) -> None:
 
 
 def _render_result_card(
-    image: VoteImage, tally: dict[str, int], my_vote: str | None
+    image: VoteImage, tally: dict[str, int], my_vote: str | None, zoom: ZoomGroup
 ) -> None:
     with st.container(border=True):
-        _image(image)
+        _image(image, zoom)
         is_ai = image.label == "synthetic"
         with st.container(horizontal=True, vertical_alignment="center"):
             st.badge(
@@ -364,10 +386,22 @@ def _render_hint(unit: list[VoteImage]) -> None:
             st.markdown("\n\n".join(hints))
 
 
-def _image(image: VoteImage) -> None:
+def _image(image: VoteImage, zoom: ZoomGroup) -> None:
+    """The image: hover to zoom, click for the full-screen viewer. Falls back to
+    a plain image if zooming isn't available (see `ui/zoom.py`)."""
+    alt = f"Vote image {image.id}"
+    if zoom_image(
+        image.image_path,
+        key=f"zoom_{zoom.id}_{image.id}",
+        group=zoom,
+        alt=alt,
+        label=image.id,
+    ):
+        st.caption(image.id)
+        return
     data = asset_image(image.image_path)
     if data is not None:
-        st.image(data, width="stretch", caption=image.id, alt=f"Vote image {image.id}")
+        st.image(data, width="stretch", caption=image.id, alt=alt)
     else:
         st.caption("_(image unavailable)_")
 

@@ -452,3 +452,62 @@ def test_gallery_picks_validated(tmp_path):
         load_task_definitions(write(0))
     with pytest.raises(ValueError):
         load_task_definitions(write(9))
+
+
+def _write_explore(tmp_path, **extra):
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"x")
+    path = tmp_path / "tasks.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "t",
+                    "title": "T",
+                    "description": "d",
+                    "mode": "explore",
+                    "input_image_paths": [str(img)],
+                    **extra,
+                }
+            ]
+        )
+    )
+    return path, str(img)
+
+
+def test_labels_and_text_only_round_trip_through_the_db(tmp_path):
+    path, img = _write_explore(
+        tmp_path,
+        input_image_labels={str(tmp_path / "a.jpg"): "Receipt"},
+        allow_text_only=True,
+    )
+    db = tmp_path / "app.db"
+    sync_tasks_from_json(path, db)
+    (task,) = get_all_tasks(db)
+    assert task.input_image_labels == {img: "Receipt"}
+    assert task.allow_text_only is True
+
+
+def test_labels_must_name_declared_images(tmp_path):
+    path, _ = _write_explore(tmp_path, input_image_labels={"nope.jpg": "X"})
+    with pytest.raises(ValueError, match="not in input_image_paths"):
+        load_task_definitions(path)
+
+
+def test_allow_text_only_is_explore_only(tmp_path):
+    path = tmp_path / "tasks.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "t",
+                    "title": "T",
+                    "description": "d",
+                    "mode": "text2img",
+                    "allow_text_only": True,
+                }
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="only valid for mode 'explore'"):
+        load_task_definitions(path)

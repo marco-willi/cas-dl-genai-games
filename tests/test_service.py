@@ -313,3 +313,71 @@ def test_fixed_input_recorded_for_edit_tasks(tmp_path):
 def test_input_label():
     assert service.input_label("assets/x/food_with_bite.jpg") == "Food with bite"
     assert service.input_label("receipt.png") == "Receipt"
+
+
+# ── Task labels and the text-only route ──────────────────────────────────────
+
+
+def test_input_label_prefers_task_labels():
+    labels = {"assets/x/mael-balland-Eo5d-unsplash.jpg": "Hot dog & fries"}
+    assert (
+        service.input_label("assets/x/mael-balland-Eo5d-unsplash.jpg", labels)
+        == "Hot dog & fries"
+    )
+    # not listed -> derived from the file name
+    assert service.input_label("assets/x/quittung.jpg", labels) == "Quittung"
+
+
+def _text_only_task(s, tmp_path, allow=True):
+    receipt = tmp_path / "receipt.jpg"
+    receipt.write_bytes(PLACEHOLDER.read_bytes())
+    return _task(
+        s,
+        mode="explore",
+        input_image_paths=[str(receipt)],
+        input_image_labels={str(receipt): "Receipt"},
+        allow_text_only=allow,
+    )
+
+
+def test_text_only_generation_has_no_source_image(tmp_path, monkeypatch):
+    s = _settings(tmp_path)
+    task = _text_only_task(s, tmp_path)
+    fake = MagicMock(return_value="pred")
+    monkeypatch.setattr(service, "start_generation", fake)
+    service.start_single_generation(
+        s, task, "Alice", "a fake receipt", _model(), text_only=True
+    )
+    assert fake.call_args.kwargs["image_input_paths"] is None
+    (row,) = get_user_generations(s.db_path, "t1", "Alice")
+    assert row.input_image_path is None and row.status == "pending"
+
+
+def test_text_only_requires_the_task_to_allow_it(tmp_path):
+    s = _settings(tmp_path)
+    task = _text_only_task(s, tmp_path, allow=False)
+    with pytest.raises(service.GenerationError, match="no text-only"):
+        service.start_single_generation(s, task, "Alice", "p", _model(), text_only=True)
+    assert get_user_generations(s.db_path, "t1", "Alice") == []
+
+
+def test_text_only_cannot_be_combined_with_an_upload(tmp_path):
+    s = _settings(tmp_path)
+    task = _text_only_task(s, tmp_path)
+    with pytest.raises(service.GenerationError, match="no text-only"):
+        service.start_single_generation(
+            s,
+            task,
+            "Alice",
+            "p",
+            _model(),
+            upload=PLACEHOLDER.read_bytes(),
+            text_only=True,
+        )
+
+
+def test_without_text_only_an_explore_task_still_needs_an_image(tmp_path):
+    s = _settings(tmp_path)
+    task = _text_only_task(s, tmp_path)
+    with pytest.raises(service.GenerationError, match="choose or upload"):
+        service.start_single_generation(s, task, "Alice", "p", _model())

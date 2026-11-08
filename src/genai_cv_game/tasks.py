@@ -61,6 +61,8 @@ class TaskDefinition(BaseModel):
     icon: str | None = None
     target_image_path: str | None = None
     input_image_paths: list[str] = []
+    input_image_labels: dict[str, str] = {}
+    allow_text_only: bool = False
     gallery_picks: int = Field(default=1, ge=1, le=4)
     vote_images: list[VoteImageDefinition] = []
 
@@ -91,6 +93,13 @@ class TaskDefinition(BaseModel):
         for p in self.input_image_paths:
             if not Path(p).exists():
                 raise ValueError(f"input image not found on disk: {p}")
+        unknown = sorted(set(self.input_image_labels) - set(self.input_image_paths))
+        if unknown:
+            raise ValueError(
+                f"input_image_labels names images not in input_image_paths: {unknown}"
+            )
+        if self.allow_text_only and self.mode != "explore":
+            raise ValueError("'allow_text_only' is only valid for mode 'explore'.")
 
         if self.mode != "vote":
             if self.vote_images:

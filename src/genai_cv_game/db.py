@@ -55,6 +55,8 @@ _SCHEMA = """
         is_available       INTEGER NOT NULL DEFAULT 1,
         sort_order         INTEGER NOT NULL DEFAULT 0,
         gallery_picks      INTEGER NOT NULL DEFAULT 1,
+        input_image_labels TEXT NOT NULL DEFAULT '{}',
+        allow_text_only    INTEGER NOT NULL DEFAULT 0,
         created_at         TEXT NOT NULL,
         updated_at         TEXT NOT NULL
     );
@@ -139,6 +141,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("tasks", "section", "TEXT"),
     ("tasks", "icon", "TEXT"),
     ("tasks", "gallery_picks", "INTEGER NOT NULL DEFAULT 1"),
+    ("tasks", "input_image_labels", "TEXT NOT NULL DEFAULT '{}'"),
+    ("tasks", "allow_text_only", "INTEGER NOT NULL DEFAULT 0"),
     ("generations", "seed", "INTEGER"),
     ("generations", "batch_id", "TEXT"),
     ("generations", "input_image_path", "TEXT"),
@@ -194,12 +198,14 @@ def insert_or_update_task(db_path: Path, task: Task) -> None:
             """
             INSERT INTO tasks (
                 id, title, description, mode, nav_title, section, icon,
-                target_image_path, input_image_paths, sort_order, gallery_picks,
+                target_image_path, input_image_paths, input_image_labels,
+                allow_text_only, sort_order, gallery_picks,
                 created_at, updated_at
             )
             VALUES (
                 :id, :title, :description, :mode, :nav_title, :section, :icon,
-                :target_image_path, :input_image_paths, :sort_order, :gallery_picks,
+                :target_image_path, :input_image_paths, :input_image_labels,
+                :allow_text_only, :sort_order, :gallery_picks,
                 :ts, :ts
             )
             ON CONFLICT(id) DO UPDATE SET
@@ -211,6 +217,8 @@ def insert_or_update_task(db_path: Path, task: Task) -> None:
                 icon              = excluded.icon,
                 target_image_path = excluded.target_image_path,
                 input_image_paths = excluded.input_image_paths,
+                input_image_labels = excluded.input_image_labels,
+                allow_text_only   = excluded.allow_text_only,
                 sort_order        = excluded.sort_order,
                 gallery_picks     = excluded.gallery_picks,
                 updated_at        = excluded.updated_at
@@ -231,6 +239,8 @@ def insert_or_update_task(db_path: Path, task: Task) -> None:
                     }
                 ),
                 "input_image_paths": json.dumps(task.input_image_paths),
+                "input_image_labels": json.dumps(task.input_image_labels),
+                "allow_text_only": int(task.allow_text_only),
                 "ts": now_utc(),
             },
         )

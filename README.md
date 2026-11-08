@@ -8,7 +8,7 @@ to create images. Task modes:
 - **Match** — recreate a target image using text prompting only
 - **Edit** — transform a source image with a prompt
 - **Compose** — place a cut-out object into a generated scene
-- **Explore** — edit your own upload, or one of the task's prepared images, with a text instruction (e.g. *I want a refund!*: manipulate a receipt or a meal)
+- **Explore** — edit your own upload, or one of the task's prepared images, with a text instruction (e.g. *I want a refund!*: manipulate a receipt or a meal, or create a fake receipt from text alone)
 - **Vote** — *real vs AI* voting game: students vote on a grid of pre-labelled images; once the instructor reveals the results, everyone sees their score, a leaderboard, the true labels, crowd accuracy and a hint per image (no generation involved)
 - **Comparison** — *model bake-off*: write one prompt, fan it out across several models in a single click, and compare the outputs side by side, grouped by round
 
@@ -127,6 +127,8 @@ Edit `data/tasks.json`. Each task is a JSON object:
 | `mode` | `"text2img"`, `"match"`, `"edit"`, `"compose"`, `"explore"`, `"vote"`, or `"comparison"` | Controls what reference imagery is shown and whether images are sent to the model. `"business"` is still accepted as an alias of `"text2img"` |
 | `target_image_path` | path string or `null` | Required for `match` mode; ignored for the others |
 | `gallery_picks` | 1–4 (optional, default 1) | How many results each student may share; they appear side by side in one gallery card. Sharing beyond the limit replaces the student's oldest pick. *Yummy!* uses 2 (two matching menu photos) |
+| `input_image_labels` | `{path: label}` (optional) | Friendly names for the prepared images in the source picker (`explore`); default: derived from the file name |
+| `allow_text_only` | bool (optional, `explore` only) | Also offer "No image — text only" (text-to-image) next to the prepared images |
 | `input_image_paths` | list of path strings | Required for `edit` (exactly 1) and `compose` (≥ 1); optional for `explore` (prepared images students may pick instead of uploading); ignored otherwise |
 | `vote_images` | list of `{id, path, label, pair?, hint?}` objects | Required (non-empty) for `vote` mode; rejected for other modes |
 
@@ -161,9 +163,12 @@ downscaled to 1536 px and stripped of metadata before being sent to the model.
   instruction; the uploaded file is saved alongside the generation under
   `generated/`. Optionally declare `input_image_paths`: students then pick one
   of these prepared images (labelled from the file name, e.g.
-  `food_with_bite.jpg` → "Food with bite") **or** upload their own. Example:
-  the *I want a refund!* task (fictional receipt or bitten food → fake a
-  refund-worthy defect).
+  `food_with_bite.jpg` → "Food with bite", or your own names via
+  `input_image_labels`) **or** upload their own. With `allow_text_only: true`
+  the picker also offers *No image — text only*: plain text-to-image without a
+  source (any model, not only image-input ones). Example: the *I want a
+  refund!* task — a hot dog, a bitten burger and a receipt to manipulate, or a
+  fake receipt from scratch, to compare both routes.
 
 For edit and explore tasks the source image is stored with each generation, so
 gallery and projector cards show **Before | After** side by side.
@@ -256,6 +261,18 @@ and an AI recreation of the same scene) are shown side by side as one block.
 No image generation, model, or budget is
 involved.
 
+**Zooming.** Students can hover an image to zoom in place (the view follows the
+mouse) and click or tap it for a full-screen viewer: scroll or pinch to zoom,
+drag to pan, double-click to reset, `+` `-` `0` `Esc` keys. A pair opens side by
+side, and when both images have the same framing (aspect ratio) their zoom and
+pan are linked. The images are not sent through Streamlit: the browser loads
+them from Streamlit's static file server (`static/`, enabled by
+`enableStaticServing` in `.streamlit/config.toml`) and caches them, so voting
+stays fast. The larger zoom version loads on first hover. If static serving is
+off or not actually working (Streamlit mounts `static/` only **at startup**: after
+first creating the folder or enabling `enableStaticServing`, restart the app),
+or an image is not below `static/`, the page falls back to plain images. The component lives in `src/genai_cv_game/ui/zoom.py` + `zoom_image.js`.
+
 **Don't leak the answer through the files.** Real photos and AI images usually
 differ in format (JPEG vs PNG), resolution and metadata, which students can see
 by opening an image in a new tab. Keep the originals plus labels and hints in a
@@ -271,7 +288,14 @@ make vote-images   # = scripts/prepare_vote_images.py for spot_the_fake
 
 The manifest for the shipped game is
 `assets/vote_images/spot_the_fake/manifest.json`; the originals stay untouched
-next to it, and the cleaned images go to `assets/vote_images/spot_the_fake_clean/`.
+next to it, and the cleaned images go to `static/vote_images/spot_the_fake/`
+(`img_NN.jpg` for the page, a larger `img_NN_zoom.jpg` for the viewer). Every
+image gets exactly the same long edge (1280 / 2048 px, upscaling smaller ones),
+so even the pixel dimensions don't give anything away, and the same JPEG
+settings (quality 92 / 95, full colour resolution). AI images only have ~1–2 MP
+of real detail, so upscaled they look softer than their real twins when zoomed
+— the larger the zoom size, the more so (see REVIEW.md for measurements).
+`--zoom-edge` changes the zoom size.
 Visible watermarks (e.g. Gemini's ✦) are not removed.
 
 **Setup:**
@@ -281,6 +305,7 @@ Visible watermarks (e.g. Gemini's ✦) are not removed.
    ```
    assets/vote_images/<task_id>/img_01.jpg
    assets/vote_images/<task_id>/img_02.png
+   assets/vote_images/<task_id>/manifest.json     # labels, pairs, hints
    ```
 
 2. Reference them from `data/tasks.json`, labelling each `real` or `synthetic`:
@@ -292,8 +317,8 @@ Visible watermarks (e.g. Gemini's ✦) are not removed.
      "description": "For each image, vote real or AI-generated.",
      "mode": "vote",
      "vote_images": [
-       { "id": "img_01", "path": "assets/vote_images/spot_the_fake_clean/img_01.jpg", "label": "real", "pair": "portrait", "hint": "Look at ..." },
-       { "id": "img_02", "path": "assets/vote_images/spot_the_fake_clean/img_02.jpg", "label": "synthetic", "pair": "portrait" }
+       { "id": "img_01", "path": "static/vote_images/spot_the_fake/img_01.jpg", "label": "real", "pair": "portrait", "hint": "Look at ..." },
+       { "id": "img_02", "path": "static/vote_images/spot_the_fake/img_02.jpg", "label": "synthetic", "pair": "portrait" }
      ]
    }
    ```

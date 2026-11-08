@@ -45,6 +45,12 @@ def _parse_json_list(value: object) -> object:
     return [] if value is None else value
 
 
+def _parse_json_dict(value: object) -> object:
+    if isinstance(value, str):
+        return json.loads(value or "{}")
+    return {} if value is None else value
+
+
 # ── Models ───────────────────────────────────────────────────────────────────
 
 
@@ -80,6 +86,10 @@ class Task(BaseModel):
     target_image_path: str | None = None
     input_image_paths: list[str] = []
     vote_images: list[VoteImage] = []
+    # Friendly names for `input_image_paths` in the source picker (path -> label).
+    input_image_labels: dict[str, str] = {}
+    # explore tasks: also offer "no source image, text to image" in the picker.
+    allow_text_only: bool = False
     # How many results each student may share in the gallery (shown side by side).
     gallery_picks: int = 1
     is_available: bool = True
@@ -89,6 +99,7 @@ class Task(BaseModel):
 
     _mode = field_validator("mode", mode="before")(normalize_mode)
     _inputs = field_validator("input_image_paths", mode="before")(_parse_json_list)
+    _labels = field_validator("input_image_labels", mode="before")(_parse_json_dict)
 
     @property
     def short_title(self) -> str:

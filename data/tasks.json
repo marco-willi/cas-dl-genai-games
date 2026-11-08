@@ -9,78 +9,78 @@
     "vote_images": [
       {
         "id": "img_01",
-        "path": "assets/vote_images/spot_the_fake_clean/img_01.jpg",
+        "path": "static/vote_images/spot_the_fake/img_01.jpg",
         "label": "synthetic",
         "pair": "portrait",
         "hint": "**Very difficult.** Inspected at very high resolution, the generated portrait shows less realistic texture. At the resolution shown here it is almost impossible to tell. Careful: the slight imperfection of the buttons in the *real* photo can be misleading."
       },
       {
         "id": "img_02",
-        "path": "assets/vote_images/spot_the_fake_clean/img_02.jpg",
+        "path": "static/vote_images/spot_the_fake/img_02.jpg",
         "label": "real",
         "pair": "portrait"
       },
       {
         "id": "img_03",
-        "path": "assets/vote_images/spot_the_fake_clean/img_03.jpg",
+        "path": "static/vote_images/spot_the_fake/img_03.jpg",
         "label": "synthetic",
         "pair": "plane",
         "hint": "The main subject, the airplane, looks quite good. The giveaway is in the close-up details of the rest of the scene: they are not convincing enough and look less clean than in the real photo."
       },
       {
         "id": "img_04",
-        "path": "assets/vote_images/spot_the_fake_clean/img_04.jpg",
+        "path": "static/vote_images/spot_the_fake/img_04.jpg",
         "label": "real",
         "pair": "plane"
       },
       {
         "id": "img_05",
-        "path": "assets/vote_images/spot_the_fake_clean/img_05.jpg",
+        "path": "static/vote_images/spot_the_fake/img_05.jpg",
         "label": "real",
         "pair": "group"
       },
       {
         "id": "img_06",
-        "path": "assets/vote_images/spot_the_fake_clean/img_06.jpg",
+        "path": "static/vote_images/spot_the_fake/img_06.jpg",
         "label": "synthetic",
         "pair": "group",
         "hint": "Look at the people: the AI-generated version shows a bias towards prototypical beauty, and many of the persons are look-alikes."
       },
       {
         "id": "img_07",
-        "path": "assets/vote_images/spot_the_fake_clean/img_07.jpg",
+        "path": "static/vote_images/spot_the_fake/img_07.jpg",
         "label": "synthetic",
         "pair": "houses",
         "hint": "Look at the wiring and pipes on the facades: in the AI-generated version they don't look very realistic."
       },
       {
         "id": "img_08",
-        "path": "assets/vote_images/spot_the_fake_clean/img_08.jpg",
+        "path": "static/vote_images/spot_the_fake/img_08.jpg",
         "label": "real",
         "pair": "houses"
       },
       {
         "id": "img_09",
-        "path": "assets/vote_images/spot_the_fake_clean/img_09.jpg",
+        "path": "static/vote_images/spot_the_fake/img_09.jpg",
         "label": "real",
         "pair": "street"
       },
       {
         "id": "img_10",
-        "path": "assets/vote_images/spot_the_fake_clean/img_10.jpg",
+        "path": "static/vote_images/spot_the_fake/img_10.jpg",
         "label": "synthetic",
         "pair": "street",
         "hint": "Read the signage: the text is weird. More generally, straight lines don't meet at the same vanishing point."
       },
       {
         "id": "img_11",
-        "path": "assets/vote_images/spot_the_fake_clean/img_11.jpg",
+        "path": "static/vote_images/spot_the_fake/img_11.jpg",
         "label": "real",
         "pair": "window"
       },
       {
         "id": "img_12",
-        "path": "assets/vote_images/spot_the_fake_clean/img_12.jpg",
+        "path": "static/vote_images/spot_the_fake/img_12.jpg",
         "label": "synthetic",
         "pair": "window",
         "hint": "**An edit, not a new image.** The AI version was made by editing the real photo, and the only change is the colour of the hat. Telling the two apart is practically impossible — image editing can leave everything else untouched."
@@ -186,12 +186,19 @@
     "nav_title": "I want a refund!",
     "section": "Image editing",
     "icon": ":material/receipt_long:",
-    "description": "Play the fraudster — for science. Pick the prepared **receipt** or the **half-eaten food**, or upload your own photo, and edit it so it would back up a refund claim: change the total, the date or an item on the receipt, or make the food look faulty (a hair, mould, a foreign object, a burnt or raw spot). Aim for an edit a busy customer-service agent would accept at a glance.\n\nThen compare *before* and *after* in the gallery: what gives the manipulation away, and how could a shop or insurer detect it? Tip: say exactly what must change and what must stay identical (layout, font, lighting, everything else on the receipt).\n\n_This is an exercise about image manipulation. Using such images in a real claim is fraud._",
+    "description": "Play the fraudster — for science. Pick one of the prepared photos — a **hot dog with fries**, a **bitten burger** or a **restaurant receipt** — or upload your own, and edit it so it would back up a refund claim: make the food look faulty (a hair, mould, a foreign object, a burnt or raw spot) or change the receipt (the total, the date, an item). Aim for an edit a busy customer-service agent would accept at a glance.\n\nThen try the other route: choose **No image — text only** and generate a fake receipt from scratch, with nothing to start from. Which route is more convincing, and which is easier to control?\n\nCompare in the gallery: what gives each fake away, and how could a shop or insurer detect it? Tips: say exactly what must change and what must stay identical (layout, font, lighting, everything else). On the receipt the numbers must add up — items, sum, tip and amount paid — or a careful reader will notice.\n\n_This is an exercise about image manipulation. Using such images in a real claim is fraud._",
     "mode": "explore",
     "input_image_paths": [
-      "assets/input_images/refund/receipt.jpg",
-      "assets/input_images/refund/food_with_bite.jpg"
-    ]
+      "assets/input_images/refund/mael-balland-Eo5dERjcF1Y-unsplash.jpg",
+      "assets/input_images/refund/sara-aurora-cimminiello-8Ysu-Bwsqvc-unsplash.jpg",
+      "assets/input_images/refund/quittung.jpg"
+    ],
+    "input_image_labels": {
+      "assets/input_images/refund/mael-balland-Eo5dERjcF1Y-unsplash.jpg": "Hot dog & fries",
+      "assets/input_images/refund/sara-aurora-cimminiello-8Ysu-Bwsqvc-unsplash.jpg": "Bitten burger",
+      "assets/input_images/refund/quittung.jpg": "Restaurant receipt"
+    },
+    "allow_text_only": true
   },
   {
     "id": "model_comparison",

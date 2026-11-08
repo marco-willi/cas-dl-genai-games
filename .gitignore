@@ -146,3 +146,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Backups of replaced input images (may show real businesses)
+assets/input_images/**/*_original.*

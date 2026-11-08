@@ -28,6 +28,31 @@ def make_submission_image_path(
 UPLOAD_MAX_EDGE = 1536
 
 
+def resize_to_max_width(data: bytes, max_px: int, quality: int = 92) -> bytes:
+    """Downscale an image to at most `max_px` wide (never upscales), high quality.
+
+    Used for thumbnails. Streamlit's own `st.image(width=N)` shrinks to exactly N
+    pixels with a bilinear filter, which looks soft on high-resolution screens;
+    callers therefore supply several times the displayed pixels. Images with
+    transparency stay PNG, everything else becomes JPEG. Raises ValueError if the
+    bytes are not a readable image.
+    """
+    try:
+        with Image.open(io.BytesIO(data)) as raw:
+            im = ImageOps.exif_transpose(raw)
+            if im.width > max_px:
+                size = (max_px, max(1, round(im.height * max_px / im.width)))
+                im = im.resize(size, Image.Resampling.LANCZOS)
+            out = io.BytesIO()
+            if im.mode in ("RGBA", "LA") or "transparency" in im.info:
+                im.convert("RGBA").save(out, "PNG", optimize=True)
+            else:
+                im.convert("RGB").save(out, "JPEG", quality=quality, optimize=True)
+            return out.getvalue()
+    except (UnidentifiedImageError, OSError) as e:
+        raise ValueError(f"Could not read the image: {e}") from e
+
+
 def save_uploaded_input_image(
     generated_dir: Path,
     task_id: str,

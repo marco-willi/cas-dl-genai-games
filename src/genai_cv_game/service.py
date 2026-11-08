@@ -7,7 +7,7 @@ Streamlit pages call these functions and only render the outcome.
 from __future__ import annotations
 
 import random
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from genai_cv_game.config import AppSettings
@@ -94,11 +94,14 @@ def resolve_input_image_paths(task: Task) -> list[Path]:
     return [Path(p) for p in task.input_image_paths if Path(p).exists()]
 
 
-def input_label(path: str | Path) -> str:
-    """Human label for a prepared input image, from its file name.
+def input_label(path: str | Path, labels: Mapping[str, str] | None = None) -> str:
+    """Human label for a prepared input image.
 
-    `assets/input_images/refund/food_with_bite.jpg` -> "Food with bite".
+    The task's `input_image_labels` entry wins; otherwise it is derived from the
+    file name: `assets/x/food_with_bite.jpg` -> "Food with bite".
     """
+    if labels and str(path) in labels:
+        return labels[str(path)]
     return Path(path).stem.replace("_", " ").replace("-", " ").strip().capitalize()
 
 
@@ -114,6 +117,7 @@ def start_single_generation(
     *,
     upload: bytes | None = None,
     prepared_input: str | None = None,
+    text_only: bool = False,
     seed: int | None = None,
 ) -> str:
     """Create a generation row and start its prediction. Returns its id.
@@ -121,8 +125,9 @@ def start_single_generation(
     Source image by mode: fixed modes (edit/compose) use the task's images;
     upload modes (explore) use `upload`, or — if the task offers prepared
     images — one of them chosen via `prepared_input` (must be listed in the
-    task's `input_image_paths`). The source is recorded on the row for
-    before/after views.
+    task's `input_image_paths`), or, if the task has `allow_text_only`,
+    `text_only=True` for plain text-to-image without a source. The source is
+    recorded on the row for before/after views.
 
     Raises `BudgetReachedError` when the budget is used up and
     `GenerationError` for missing inputs. A failure to start the prediction is
@@ -136,7 +141,9 @@ def start_single_generation(
                 "This task's input images are not available on disk. "
                 "Ask the instructor to add them to `assets/input_images/`."
             )
-    if task.mode in UPLOAD_INPUT_MODES and upload is None:
+    if text_only and not (task.allow_text_only and upload is None):
+        raise GenerationError("This task has no text-only option.")
+    if task.mode in UPLOAD_INPUT_MODES and upload is None and not text_only:
         if prepared_input is None:
             raise GenerationError(
                 "Please choose or upload an image to edit before generating."

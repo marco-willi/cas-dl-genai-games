@@ -1,4 +1,6 @@
 [server]
+# The zoom viewer loads vote images from ./static (served at /app/static/...).
+enableStaticServing = true
 # Uploads (explore tasks) are downscaled anyway; reject huge files early. MB.
 maxUploadSize = 10
 

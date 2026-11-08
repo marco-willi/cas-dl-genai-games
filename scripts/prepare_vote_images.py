@@ -4,11 +4,16 @@ Real photos and AI images usually differ in format (JPEG vs PNG), resolution and
 metadata — students can tell them apart by right-clicking. This script reads a
 manifest of *original* images, re-encodes every image to the same format, long
 edge and quality (metadata stripped), gives them neutral names in a shuffled
-order, and rewrites the task's `vote_images` block in `tasks.json`. Images
+order, and rewrites the task's `vote_images` block in `tasks.json`. Every image
+is resized to *exactly* the same long edge (smaller ones are upscaled), so not
+even the pixel dimensions give anything away. Images
 sharing a `pair` value (real + AI version of the same scene) stay adjacent,
 with a random side per pair, so the app shows them side by side.
 
-Originals are never modified.
+Each image is written twice into `static/vote_images/<task_id>/` (served by
+Streamlit's static file server): `img_NN.jpg` for the page and the larger
+`img_NN_zoom.jpg`, which the zoom viewer loads on demand. Originals are never
+modified.
 
 Usage:
     uv run python scripts/prepare_vote_images.py \
@@ -33,17 +38,52 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
+# Page version: shown at ~300-450 px wide, so 1280 px is plenty. Larger would
+# make the (true) resolution gap between real photos (4-17 MP) and AI images
+# (~1-2 MP, upscaled to match) visible at first glance.
 LONG_EDGE = 1280
-QUALITY = 85
+QUALITY = 92
+# Zoom version: loaded on demand by the zoom viewer. 2048 px keeps most of the
+# detail of the real photos while the AI images are upscaled <= ~1.7x. At 2400 px
+# the AI images are clearly blurrier than their real twins in 5 of 6 pairs (local
+# sharpness 0.1-0.5x), which turns "blurry = AI" into a shortcut; at 1600 px the
+# viewer runs out of pixels quickly. See REVIEW.md for the measurements.
+ZOOM_EDGE = 2048
+ZOOM_QUALITY = 95
+# 4:4:4 = full colour resolution (PIL's default 4:2:0 halves it, which shows as
+# colour fringing when zoomed). The same settings are used for every image.
+SUBSAMPLING = 0
 
 
-def normalise(src: Path, dest: Path) -> None:
-    with Image.open(src) as im:
-        im = ImageOps.exif_transpose(im).convert("RGB")
-        im.thumbnail((LONG_EDGE, LONG_EDGE), Image.Resampling.LANCZOS)
-        dest.parent.mkdir(parents=True, exist_ok=True)
+def normalise(
+    src: Path,
+    dest: Path,
+    zoom_dest: Path | None = None,
+    long_edge: int = LONG_EDGE,
+    zoom_edge: int = ZOOM_EDGE,
+) -> None:
+    """Write `dest` (and optionally a larger `zoom_dest`) from `src`.
+
+    Both are JPEGs without metadata whose long edge is exactly `long_edge` /
+    `zoom_edge` — upscaling smaller sources — so file properties can't tell a
+    real photo from an AI image. Upscaled images show less detail when zoomed;
+    that is the image's true resolution, not an artefact to hide.
+    """
+    with Image.open(src) as raw:
+        im = ImageOps.exif_transpose(raw).convert("RGB")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    for target, edge, quality in (
+        (dest, long_edge, QUALITY),
+        (zoom_dest, zoom_edge, ZOOM_QUALITY),
+    ):
+        if target is None:
+            continue
+        scale = edge / max(im.size)
+        size = (round(im.width * scale), round(im.height * scale))
         # No exif/icc passed -> metadata stripped.
-        im.save(dest, "JPEG", quality=QUALITY, optimize=True)
+        im.resize(size, Image.Resampling.LANCZOS).save(
+            target, "JPEG", quality=quality, subsampling=SUBSAMPLING, optimize=True
+        )
 
 
 def _order(entries: list[dict], rng: random.Random) -> list[dict]:
@@ -77,11 +117,19 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--task-id", required=True)
     parser.add_argument("--tasks-json", type=Path, default=Path("data/tasks.json"))
-    parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="default: static/vote_images/<task-id> (must stay below static/)",
+    )
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--zoom-edge", type=int, default=ZOOM_EDGE)
     args = parser.parse_args()
 
-    out_dir = args.out_dir or Path("assets/vote_images") / f"{args.task_id}_clean"
+    out_dir = args.out_dir or Path("static/vote_images") / args.task_id
+    for old in [*out_dir.glob("img_*.jpg")] if out_dir.is_dir() else []:
+        old.unlink()  # no stale images from an earlier, longer run
     entries = json.loads(args.manifest.read_text())
     rng = random.Random(args.seed)
     ordered = _order(entries, rng)
@@ -90,7 +138,12 @@ def main() -> None:
     for i, entry in enumerate(ordered, start=1):
         image_id = f"img_{i:02d}"
         dest = out_dir / f"{image_id}.jpg"
-        normalise(Path(entry["path"]), dest)
+        normalise(
+            Path(entry["path"]),
+            dest,
+            out_dir / f"{image_id}_zoom.jpg",
+            zoom_edge=args.zoom_edge,
+        )
         item = {"id": image_id, "path": dest.as_posix(), "label": entry["label"]}
         if entry.get("pair"):
             item["pair"] = entry["pair"]

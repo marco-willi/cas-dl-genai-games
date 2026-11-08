@@ -32,6 +32,7 @@ from genai_cv_game.ui.common import (
     current_user,
     model_caption,
     prompt_caption,
+    thumbnail,
 )
 from genai_cv_game.ui.gallery import render_gallery
 from genai_cv_game.ui.vote import render_vote_page
@@ -330,13 +331,17 @@ def _render_prompt_form(
         f"{plural(remaining, 'generation')} left. Tweak the prompt or switch model."
     )
 
-    model = _render_model_selector(
-        task, settings, next_num, last.model_slug if last else None
-    )
-
-    upload, prepared = None, None
+    source = _Source()
     if task.mode in UPLOAD_INPUT_MODES:
-        upload, prepared = _render_source_picker(task)
+        source = _render_source_picker(task)
+
+    model = _render_model_selector(
+        task,
+        settings,
+        next_num,
+        last.model_slug if last else None,
+        needs_image=not source.text_only,
+    )
 
     _render_prompt_tips()
     prompt = st.text_area(
@@ -359,7 +364,7 @@ def _render_prompt_form(
             task.mode in FIXED_INPUT_MODES
             and not service.resolve_input_image_paths(task)
         )
-        or (task.mode in UPLOAD_INPUT_MODES and upload is None and prepared is None)
+        or (task.mode in UPLOAD_INPUT_MODES and not source.chosen)
     )
     if st.button(
         "Generate",
@@ -375,30 +380,47 @@ def _render_prompt_form(
                 current_user(),
                 prompt.strip(),
                 model,
-                upload=upload,
-                prepared_input=prepared,
+                upload=source.upload,
+                prepared_input=source.prepared,
+                text_only=source.text_only,
                 seed=seed,
             )
         )
 
 
 _UPLOAD_OWN = "__upload__"
+_TEXT_ONLY = "__text_only__"
+_THUMB_WIDTH = 170
 
 
-def _render_source_picker(task: Task) -> tuple[bytes | None, str | None]:
-    """Choose the image to edit: one of the task's prepared images or an upload.
+@dataclass(frozen=True)
+class _Source:
+    """What the student chose as the image to edit (at most one field is set)."""
 
-    Returns (upload bytes, prepared image path); at most one is set. Keys are
-    per task (not per generation), so the choice and the uploaded file stay put
-    while the student iterates on prompts.
+    upload: bytes | None = None  # their own uploaded image
+    prepared: str | None = None  # path of one of the task's prepared images
+    text_only: bool = False  # no source image: plain text-to-image
+
+    @property
+    def chosen(self) -> bool:
+        return self.upload is not None or self.prepared is not None or self.text_only
+
+
+def _render_source_picker(task: Task) -> _Source:
+    """Choose the image to edit: a prepared image, text only, or an upload.
+
+    Keys are per task (not per generation), so the choice and the uploaded file
+    stay put while the student iterates on prompts.
     """
     prepared = [str(p) for p in service.resolve_input_image_paths(task)]
     if prepared:
-        labels = {p: service.input_label(p) for p in prepared}
+        labels = {p: service.input_label(p, task.input_image_labels) for p in prepared}
+        with st.container(horizontal=True):
+            for p in prepared:
+                thumbnail(p, _THUMB_WIDTH, caption=labels[p], alt=labels[p])
+        if task.allow_text_only:
+            labels[_TEXT_ONLY] = "No image — text only"
         labels[_UPLOAD_OWN] = "Upload my own"
-        cols = st.columns(len(prepared) + 1)
-        for col, p in zip(cols, prepared, strict=False):
-            col.image(asset_image(p) or p, caption=labels[p], alt=labels[p])
         choice = st.segmented_control(
             "Image to edit",
             options=list(labels),
@@ -407,8 +429,14 @@ def _render_source_picker(task: Task) -> tuple[bytes | None, str | None]:
             required=True,
             key=f"source_{task.id}",
         )
+        if choice == _TEXT_ONLY:
+            st.caption(
+                "No source image: the model creates the picture from your prompt "
+                "alone. Describe everything — nothing is carried over from a photo."
+            )
+            return _Source(text_only=True)
         if choice != _UPLOAD_OWN:
-            return None, choice
+            return _Source(prepared=choice)
 
     st.caption(f":material/shield: {PRIVACY_NOTE}")
     uploaded = st.file_uploader(
@@ -418,9 +446,14 @@ def _render_source_picker(task: Task) -> tuple[bytes | None, str | None]:
         help="Large images are downscaled to 1536 px; metadata is removed.",
     )
     if uploaded is None:
-        return None, None
-    st.image(uploaded, caption="Your image — your prompt will edit this.", width=320)
-    return uploaded.getvalue(), None
+        return _Source()
+    thumbnail(
+        uploaded.getvalue(),
+        320,
+        caption="Your image — your prompt will edit this.",
+        alt="Your uploaded image",
+    )
+    return _Source(upload=uploaded.getvalue())
 
 
 def _render_seed_input(key: str, visible: bool) -> int | None:
@@ -443,14 +476,23 @@ def _render_seed_input(key: str, visible: bool) -> int | None:
 
 
 def _render_model_selector(
-    task: Task, settings: AppSettings, next_num: int, preferred_slug: str | None
+    task: Task,
+    settings: AppSettings,
+    next_num: int,
+    preferred_slug: str | None,
+    needs_image: bool = True,
 ) -> ModelEntry | None:
-    """Model dropdown. Returns the chosen model, or None (catalog empty)."""
+    """Model dropdown. Returns the chosen model, or None (catalog empty).
+
+    Tasks that send a source image only offer image-input models, unless the
+    student picked the text-only route (`needs_image=False`).
+    """
+    wants_image = task.mode in IMAGE_INPUT_MODES and needs_image
     enabled = load_enabled_models(settings.models_path)
-    if task.mode in IMAGE_INPUT_MODES:
+    if wants_image:
         enabled = [m for m in enabled if m.supports_image_input]
     if not enabled:
-        if task.mode in IMAGE_INPUT_MODES:
+        if wants_image:
             st.error(
                 "This task needs an image-input model, but none are enabled. Ask the "
                 "instructor to enable one with `supports_image_input: true`."
@@ -468,7 +510,7 @@ def _render_model_selector(
         options=slugs,
         format_func=lambda s: by_slug[s].display_name,
         index=slugs.index(preferred_slug) if preferred_slug in by_slug else 0,
-        key=f"model_{task.id}_{next_num}",
+        key=f"model_{task.id}_{next_num}_{'img' if wants_image else 'txt'}",
     )
     chosen = by_slug[chosen_slug]
     if chosen.description:

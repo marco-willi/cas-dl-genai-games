@@ -253,7 +253,7 @@ task with and without conditioning is a strong pairing.
 
 ### ✅ D1. The vote game can be solved without looking at the image content
 
-**Status ✅:** `scripts/prepare_vote_images.py` (`make vote-images`) re-encodes all images to JPEG q85, 1280 px long edge, no metadata, neutral names `img_01…12` into `spot_the_fake_clean/`, and rewrites `tasks.json`. Originals and a `manifest.json` (labels, `pair`, hints) stay in `spot_the_fake/`. *Follow-up:* the 6 real/AI twins are shown **side by side as pairs** (`pair` field, validated: one real + one synthetic, adjacent); pair order is set in the manifest (`order`; the near-impossible hat-colour edit comes last) and the side is random per pair (current file: real left in 3 pairs, right in 3). Hints were rewritten by the instructor and are shown once per pair. ⚠️ Still visible: aspect ratios differ (two AI images are very wide) and **the Gemini street image (now img_10, Pair 5) carries Gemini's ✦ watermark** in the bottom-right corner — crop or replace it if you don't want that tell.
+**Status ✅:** `scripts/prepare_vote_images.py` (`make vote-images`) re-encodes all images to JPEG q85, 1280 px long edge, no metadata, neutral names `img_01…12` into `static/vote_images/spot_the_fake/` (since the zoom feature; originally `assets/…_clean/`), and rewrites `tasks.json`. Originals and a `manifest.json` (labels, `pair`, hints) stay in `spot_the_fake/`. *Follow-up:* the 6 real/AI twins are shown **side by side as pairs** (`pair` field, validated: one real + one synthetic, adjacent); pair order is set in the manifest (`order`; the near-impossible hat-colour edit comes last) and the side is random per pair (current file: real left in 3 pairs, right in 3). Hints were rewritten by the instructor and are shown once per pair. ⚠️ Still visible: aspect ratios differ (two AI images are very wide) and **the Gemini street image (now img_10, Pair 5) carries Gemini's ✦ watermark** in the bottom-right corner — crop or replace it if you don't want that tell.
 I inspected `assets/vote_images/spot_the_fake/`:
 
 | | Format | Resolution | Size |
@@ -498,9 +498,37 @@ admin stats, projector).
 
 **Model catalog update (instructor request):** added `openai/gpt-image-2` (`input_images`, no seed); replaced FLUX 1.1 Pro → `black-forest-labs/flux-3-image` (`images`, no seed), FLUX 2 Flex → `black-forest-labs/flux-2-klein-4b` (`images`, seed), Seedream 4 → `bytedance/seedream-5-pro` (`image_input`, no seed). Field names and seed support taken from Replicate's published schemas; seed now only on Ideogram 3 Turbo and FLUX 2 Klein 4B. C1/D6 notes above describe the catalog at the time of the review.
 
-**New task (instructor request): "I want a refund!"** — explore task with two prepared images (`assets/input_images/refund/`: a drawn fictional receipt and a placeholder cookie illustration, made by `scripts/make_refund_inputs.py`) or a student upload; students fake a refund-worthy manipulation. Explore tasks can now offer prepared images; the source image is stored per generation and shown as Before | After in the gallery (also for edit tasks).
+**New task (instructor request): "I want a refund!"** — explore task: students manipulate a prepared photo (hot dog & fries, bitten burger, restaurant receipt — `assets/input_images/refund/`, supplied by the instructor; origins in `source.txt`), upload their own, or choose *No image — text only* to generate a fake receipt from scratch. Explore tasks can now offer prepared images with friendly labels (`input_image_labels`) and a text-only route (`allow_text_only`, which also unlocks non-image-input models such as Ideogram); the source image is stored per generation and shown as Before | After in the gallery (also for edit tasks). The earlier drawn placeholder images and `scripts/make_refund_inputs.py` were removed. Note: the receipt photo shows a real restaurant (name, address, a first name) and comes from a Facebook post — check that this is fine for a public repository.
 
 **New task (instructor request): "Yummy!"** — text-to-image, two realistic menu photos for a delivery app that must match in style. New task field `gallery_picks` (default 1): students share up to N results, shown side by side in one gallery card; the old one-pick unique index is dropped and the limit enforced in `submit_to_gallery` (oldest pick replaced).
+
+**Zoom for "Real or AI?" (instructor request):** hover zoom + full-screen viewer with pair-linked zoom/pan, built as an inline Custom Component v2 (`ui/zoom.py`, `zoom_image.js`) instead of `streamlit-image-zoom` (legacy v1 iframe component that re-sends the pixels on every rerun). Images are served from `static/` (`enableStaticServing`) and cached by the browser; a 1600 px zoom version loads on first hover. All vote images are now resized to exactly the same pixel size so dimensions cannot leak the label (smaller AI images are upscaled, so they look softer when zoomed — a true resolution difference). Math is tested in QuickJS; the in-browser behaviour has not been seen in a real browser.
+
+**Vote-image quality (instructor request):** audited the processing of the originals. Findings: the real
+photos are sRGB JPEGs of 4.6–17 MP; the AI images are PNGs of only 1.1–1.6 MP (long edge 1200–1916 px, one is RGBA
+with a fully opaque alpha); no colour-profile problem (reals are sRGB, AI images untagged). What was lossy: JPEG
+quality 85/90 with 4:2:0 chroma (colour fringing when zoomed) and a 1600 px zoom size. Now: page 1280 px q92, zoom
+2048 px q95, both 4:4:4, identical settings for every image (`scripts/prepare_vote_images.py`).
+
+Why 2048 and not "as large as the originals": all images share the same pixel size (so dimensions can't leak the
+label), so enlarging the zoom version upscales the AI images, whose real resolution is limited. Local sharpness at
+1:1 (variance of the Laplacian, centre 512 px crop), AI ÷ real, per pair:
+
+| pair | 1280 px | 1600 px | 2048 px | 2400 px |
+|---|---|---|---|---|
+| portrait | 0.27 | 0.27 | 0.16 | 0.10 |
+| plane | 0.64 | 0.84 | 1.22 | 1.03 |
+| group | 0.92 | 0.87 | 0.71 | 0.53 |
+| houses | 0.85 | 0.44 | 0.25 | 0.19 |
+| street | 0.74 | 0.52 | 0.34 | 0.26 |
+| window | 0.92 | 0.71 | 0.44 | 0.29 |
+
+At 2400 px (the largest size at which every real photo is still downscaled) the AI image is clearly softer in 5 of 6
+pairs — "blurry = AI" becomes a shortcut; at 2048 px the picture is still mixed (in the plane pair the AI image is
+the sharper one). The page version stays at 1280 px for the same reason. Change with
+`make vote-images` / `scripts/prepare_vote_images.py --zoom-edge N`.
+
+**Blurry thumbnails (instructor report):** the refund picker's thumbnails were `st.image(width=170)`; Streamlit then shrinks the image server-side to exactly 170 px (bilinear), so the browser received 170×255 px (13 KB) — soft on retina screens. Same for the upload preview (320) and the match-target strip (360). Now `ui.common.thumbnail` supplies 3× the pixels (510 px, ~60–95 KB, Lanczos, cached) inside a container of the intended width. The gallery's Before/After and result images were already served at full size (1460 px). The refund receipt is a drawn placeholder until the real photo is dropped in as `quittung.jpg`; the previous photo is kept as git-ignored `quittung_original.jpg`.
 
 **Backlog / ideas:** D4 awards, match scoring, timed rounds · D5 systematic
 rating task · D7 reflection notes · text-rendering task from `IDEAS.md` ·

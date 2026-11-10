@@ -97,8 +97,8 @@
   },
   {
     "id": "pizzeria_visual",
-    "title": "Pizzeria visual",
-    "nav_title": "Pizzeria visual",
+    "title": "Pizza Pizza",
+    "nav_title": "Pizza Pizza",
     "section": "Text to image",
     "icon": ":material/local_pizza:",
     "description": "Create a visual for a Pizzeria. It should show a scene associated with the Pizzeria. You can try anything — interior, storefront, dish, staff at work, branded photography. The goal is to obtain something useful that could realistically be used in a real setting (menu cover, social post, website hero, flyer).",
@@ -110,18 +110,9 @@
     "nav_title": "Yummy!",
     "section": "Text to image",
     "icon": ":material/restaurant_menu:",
-    "description": "You shoot the menu photos for a restaurant on an online food-delivery app. Create **two different menu items from the same restaurant** — for example a burger and its fries, a ramen bowl and gyoza, or a pizza and a tiramisu. Both must look like **real product photos** a customer would trust, and they must clearly **belong together**: same camera angle, lighting, background, plates and props, and colour grading.\n\nShare your best **pair** to the gallery — your two picks are shown side by side, so mismatches are easy to spot.\n\nTip: write one *style block* (camera, lens, light, background, props, mood) and reuse it word for word in both prompts; change only the dish. Stay with the same model, and if it supports a seed, keep the seed fixed.",
+    "description": "You shoot the menu photos for a restaurant on an online food-delivery app. Create **two different menu items from the same restaurant**. For example: beef burger & chicken burger, Zürigschnätzlets & Bratwurst mit Zwiebelsosse, or a pizza and a tiramisu. Both must look like **real product photos** a customer would trust, and they must clearly **belong together**: same camera angle, lighting, background, plates and props, and colour grading.\n\nShare your best **pair** to the gallery — your two picks are shown side by side, so mismatches are easy to spot.\n\nTip: write one *style block* (camera, lens, light, background, props, mood) and reuse it word for word in both prompts; change only the dish. Stay with the same model, and if it supports a seed, keep the seed fixed.",
     "mode": "text2img",
     "gallery_picks": 2
-  },
-  {
-    "id": "match_brand_family",
-    "title": "Match the brand campaign: character family",
-    "nav_title": "Match the campaign",
-    "section": "Text to image",
-    "description": "Recreate the target image as closely as you can using text only. Pay close attention to the matryoshka-doll character lineup ordered by size, the 3D stylised character shapes (rounded, slightly oversized heads, simple expressive faces), the warm food-brand colour palette, what each character is holding, and the overall ad-photography feel against a neutral background.",
-    "mode": "match",
-    "target_image_path": "assets/target_images/marketing_campaign.png"
   },
   {
     "id": "out_of_distribution_anything",
@@ -133,22 +124,16 @@
     "mode": "text2img"
   },
   {
-    "id": "camera_trap_serval",
-    "title": "Synthetic training data: camera trap of a rare serval",
-    "nav_title": "Serval camera trap",
+    "id": "camera_trap_synthetic",
+    "title": "Synthetic data: animal in an empty camera-trap frame",
+    "nav_title": "Camera trap",
     "section": "Synthetic data",
     "icon": ":material/pets:",
-    "description": "Create a realistic example of a camera trap image showing a rare serval. The image should be plausible enough to use as additional synthetic training data for a wildlife-monitoring detector: correct species morphology (long legs, oversized ears, spotted coat, short tail), nighttime or low-light grainy look typical of trail cameras, natural African savanna context, slight motion blur, infrared-leaning colour cast where appropriate.",
-    "mode": "text2img"
-  },
-  {
-    "id": "camera_trap_serval_conditioned",
-    "title": "Synthetic training data: With conditioning",
-    "nav_title": "Serval with reference",
-    "section": "Synthetic data",
-    "icon": ":material/pets:",
-    "description": "Same goal as the serval camera-trap task — produce a realistic camera trap image plausible enough to use as additional synthetic training data for a wildlife-monitoring detector (correct species morphology, nighttime or low-light grainy trail-camera look, natural African savanna context, slight motion blur, infrared-leaning colour cast where appropriate) — but this time you condition the generation on a reference image. Upload a reference (for example a real serval photo or a sample trail-camera frame) and use your prompt to steer the model: keep the subject's appearance and pose from the reference while imposing the camera-trap style, lighting, and scene.",
-    "mode": "explore"
+    "description": "Wildlife detectors need many labelled camera-trap images, but rare animals are seldom photographed. Use the **empty camera-trap frame** below as the conditioning image and **place an animal into it** (for example a serval, a leopard or a honey badger). The result should look like a **real trail-camera capture** that you could add to the training set of a detector. The animal must match the scene's lighting, perspective and scale, stand on the ground (with shadow or contact), have correct species anatomy, and share the original's camera look (colour cast, noise, sharpness, any timestamp overlay).\n\nKeep everything else in the frame unchanged. Ask yourself: *could a detector or an ecologist tell that this is synthetic?*\n\nTip: name the species and its pose/position in the frame, and say explicitly what must stay the same.",
+    "mode": "edit",
+    "input_image_paths": [
+      "assets/synthetic_data/kgalgadi_camera_trap.JPG"
+    ]
   },
   {
     "id": "edit_relight_storefront",
@@ -203,7 +188,7 @@
   {
     "id": "model_comparison",
     "title": "Model comparison: same prompt, different models",
-    "nav_title": "Model bake-off",
+    "nav_title": "Model comparison",
     "section": "Evaluate",
     "description": "Write one prompt, then run it unchanged across several models and compare the results side by side. Judge each output on explicit criteria: prompt adherence, visual realism, composition, text rendering, object identity, controllability, and usefulness for your target application. Pick the best output and be ready to justify your choice against those criteria. Tip: a prompt that stresses text, a specific object, or a precise composition exposes the differences between models most clearly.",
     "mode": "comparison"

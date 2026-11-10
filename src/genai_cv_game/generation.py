@@ -78,11 +78,17 @@ def start_generation(
             ]
         try:
             client = replicate.Client(api_token=settings.replicate_api_token)
-            # `owner/name:version` pins a version; `owner/name` runs the latest.
-            # Running by model name works for community and official models
-            # alike and saves a "resolve latest version" API call.
-            if ":" in chosen_model:
-                version = chosen_model.split(":", 1)[1]
+            # `owner/name:version` pins a version; `owner/name` runs the latest,
+            # which we resolve to a concrete version first: replicate-python
+            # fails to parse the response of a by-name prediction when the API
+            # reports `version: null` (the prediction is created, but we lose
+            # its id), which happens for official models.
+            version = (
+                chosen_model.split(":", 1)[1]
+                if ":" in chosen_model
+                else _latest_version(client, chosen_model)
+            )
+            if version:
                 prediction = client.predictions.create(version=version, input=payload)
             else:
                 prediction = client.predictions.create(
@@ -91,6 +97,24 @@ def start_generation(
         except Exception as e:
             raise RuntimeError(f"Failed to start generation: {e}") from e
     return str(prediction.id)
+
+
+_VERSION_CACHE: dict[str, str] = {}
+
+
+def _latest_version(client: replicate.Client, slug: str) -> str | None:
+    """Latest version id of `owner/name`, cached per process; None if unknown."""
+    if slug in _VERSION_CACHE:
+        return _VERSION_CACHE[slug]
+    try:
+        latest = client.models.get(slug).latest_version
+        version = latest.id if latest is not None else None
+    except Exception:
+        return None
+    if isinstance(version, str) and version:
+        _VERSION_CACHE[slug] = version
+        return version
+    return None
 
 
 def poll_generation(

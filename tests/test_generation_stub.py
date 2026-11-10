@@ -322,3 +322,21 @@ def test_extract_url_iterator():
 def test_extract_url_empty_raises():
     with pytest.raises(RuntimeError, match="Unexpected output"):
         _extract_url([])
+
+
+def test_real_start_resolves_latest_version_for_model_name(tmp_path, monkeypatch):
+    from genai_cv_game import generation
+
+    generation._VERSION_CACHE.clear()
+    fake_client = MagicMock()
+    fake_client.models.get.return_value.latest_version.id = "v123"
+    fake_client.predictions.create.return_value = MagicMock(id="pred_1")
+    monkeypatch.setattr(
+        "genai_cv_game.generation.replicate.Client", lambda api_token: fake_client
+    )
+    s = _settings(tmp_path, stub=False, token="tok", model="own/official")
+    assert start_generation("p", "r1", "sub1", s) == "pred_1"
+    fake_client.predictions.create.assert_called_once_with(
+        version="v123", input={"prompt": "p"}
+    )
+    generation._VERSION_CACHE.clear()

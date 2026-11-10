@@ -350,7 +350,7 @@ def _render_prompt_form(
         key=f"prompt_{task.id}_{next_num}",
     )
     seed = _render_seed_input(
-        f"seed_{task.id}_{next_num}", visible=bool(model and model.supports_seed)
+        f"seed_{task.id}_{next_num}", supported=bool(model and model.supports_seed)
     )
 
     disabled = (
@@ -456,23 +456,24 @@ def _render_source_picker(task: Task) -> _Source:
     return _Source(upload=uploaded.getvalue())
 
 
-def _render_seed_input(key: str, visible: bool) -> int | None:
-    if not visible:
-        return None
+def _render_seed_input(key: str, supported: bool) -> int | None:
+    """Seed field; always shown, but disabled when no chosen model takes a seed."""
     value = st.number_input(
         "Seed (optional)",
         min_value=0,
         max_value=_SEED_MAX,
         value=None,
         step=1,
-        placeholder="random",
+        placeholder="random" if supported else "not supported by this model",
         key=key,
+        disabled=not supported,
         help=(
             "Same prompt + same seed → same image. Keep the seed fixed to see "
-            "what your prompt change does; leave it empty for a random seed."
+            "what your prompt change does; leave it empty for a random seed. "
+            "Not every model supports a seed."
         ),
     )
-    return int(value) if value is not None else None
+    return int(value) if value is not None and supported else None
 
 
 def _render_model_selector(
@@ -561,7 +562,7 @@ def _render_comparison_form(
     if too_many:
         st.warning(f"Select at most {plural(cap, 'model')} for this round.")
     seed = _render_seed_input(
-        f"cmp_seed_{task.id}", visible=any(m.supports_seed for m in models)
+        f"cmp_seed_{task.id}", supported=any(m.supports_seed for m in models)
     )
 
     label = f"Generate across {plural(n, 'model')}" if n else "Generate"
@@ -617,15 +618,21 @@ def _render_prompt_tips() -> None:
     with st.expander("Prompt tips", icon=":material/lightbulb:"):
         st.markdown(
             """
-            A strong prompt usually names most of these explicitly:
+            Start with the **purpose**: what the image is for and who will see it
+            (e.g. "a menu photo for a food-delivery app"). It sets the realism,
+            style and framing the model should aim for.
 
-            - **Subject** — what is in the frame (and what is not)
-            - **Composition** — placement, framing, perspective
-            - **Style** — photographic, illustration, 3D render, painterly, etc.
-            - **Lighting** — soft / harsh, direction, time of day
-            - **Camera** — lens (e.g. 35 mm, 85 mm), depth of field, angle
-            - **Mood & colour palette** — warm/cool, dominant colours
-            - **Details that matter** — text on signage, materials, textures
+            Then name as many of these as matter:
+
+            - **Subject:** what is in the frame (and what is not)
+            - **Composition:** placement, framing, perspective
+            - **Style:** photographic, illustration, 3D render, painterly, etc.
+            - **Lighting:** soft or harsh, direction, time of day
+            - **Camera:** lens (e.g. 35 mm, 85 mm), depth of field, angle
+            - **Mood and colour palette:** warm or cool, dominant colours
+            - **Details that matter:** text on signage, materials, textures
+            - **Keep unchanged:** when you start from a source image, say what
+              must stay as it is
 
             Iterate: start broad, then add one constraint at a time and re-run.
             If the model supports a seed, keep it fixed while you change the prompt.

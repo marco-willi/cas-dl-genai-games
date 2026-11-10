@@ -1,20 +1,20 @@
 [
   {
-    "id": "ideogram-v3-turbo",
-    "slug": "ideogram-ai/ideogram-v3-turbo",
-    "display_name": "Ideogram 3 Turbo",
-    "description": "Fast; especially strong at rendering text (signs, posters, logos) in images.",
-    "supports_seed": true,
-    "sort_order": 10
-  },
-  {
     "id": "nano-banana-2",
     "slug": "google/nano-banana-2",
     "display_name": "Google Nano Banana 2",
     "description": "Smaller / faster Google model; good for quick iteration. Supports image input (edit / compose / free editing).",
     "supports_image_input": true,
-    "sort_order": 20,
+    "sort_order": 10,
     "image_input_field": "image_input"
+  },
+  {
+    "id": "ideogram-v3-turbo",
+    "slug": "ideogram-ai/ideogram-v3-turbo",
+    "display_name": "Ideogram 3 Turbo",
+    "description": "Fast; especially strong at rendering text (signs, posters, logos) in images.",
+    "supports_seed": true,
+    "sort_order": 20
   },
   {
     "id": "flux-2-klein-4b",

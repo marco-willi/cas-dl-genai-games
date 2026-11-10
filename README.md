@@ -10,7 +10,7 @@ to create images. Task modes:
 - **Compose** — place a cut-out object into a generated scene
 - **Explore** — edit your own upload, or one of the task's prepared images, with a text instruction (e.g. *I want a refund!*: manipulate a receipt or a meal, or create a fake receipt from text alone)
 - **Vote** — *real vs AI* voting game: students vote on a grid of pre-labelled images; once the instructor reveals the results, everyone sees their score, a leaderboard, the true labels, crowd accuracy and a hint per image (no generation involved)
-- **Comparison** — *model bake-off*: write one prompt, fan it out across several models in a single click, and compare the outputs side by side, grouped by round
+- **Comparison** — *model comparison*: write one prompt, fan it out across several models in a single click, and compare the outputs side by side, grouped by round
 
 Each student picks any available task from the sidebar (grouped into sections),
 has a fixed budget of generations per task (default 30, configurable via

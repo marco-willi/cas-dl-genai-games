@@ -5,7 +5,7 @@ vision. Students sign in with a name + class passcode, work through tasks
 (generate / edit / compose / compare images via the Replicate API, or play a
 "real vs AI" voting game), share their best result(s) per task to a live gallery
 and like classmates' entries. Deployed for a single session on Streamlit
-Community Cloud, then deleted (see `DEPLOY.md`). Filesystem and DB are ephemeral
+Community Cloud, then deleted (see `docs/DEPLOY.md`). Filesystem and DB are ephemeral
 by design.
 
 ## Commands
@@ -69,9 +69,9 @@ scripts/prepare_vote_images.py normalise/shuffle vote images, rewrite tasks.json
 tests/                         pytest; test_service.py / test_features.py cover newer features
 ```
 
-Docs: `README.md` (setup, task/model authoring, workflows), `DEPLOY.md`
-(one-day Streamlit Cloud deployment), `REVIEW.md` (review findings, decisions,
-change log), `IDEAS.md` (prompt ideas). `.claude/plans/archive/` holds old
+Docs: `README.md` (short overview + quick start), `docs/DEVELOP.md` (config,
+task/model authoring, vote games, workflows, troubleshooting), `docs/DEPLOY.md`
+(one-day Streamlit Cloud deployment). `.claude/plans/archive/` holds old
 implementation plans that describe **earlier** designs (e.g. rounds) — don't
 treat them as current.
 
@@ -106,7 +106,7 @@ treat them as current.
   both images have the same aspect ratio. Every vote image must have the same pixel size
   (script resizes exactly) so dimensions can't leak the label — never add images by hand.
 - **Vote reveal**: `app_settings` key `reveal:<task_id>`; reveal closes voting.
-- **Identity**: user name only, case-insensitive. No accounts (deliberate — see REVIEW.md S3).
+- **Identity**: user name only, case-insensitive. No accounts (deliberate).
 
 ## Conventions
 
@@ -137,7 +137,7 @@ treat them as current.
   in QuickJS: `uv run --with quickjs pytest tests/test_zoom_math.py` (skipped otherwise).
   There is no browser here — UI behaviour of the component itself is unverified until
   someone opens it; say so.
-- Record user-facing decisions and larger changes in `REVIEW.md`.
+- Keep `docs/DEVELOP.md` in sync with user-facing changes (task fields, env vars, workflows).
 
 ## Verifying in the running app
 

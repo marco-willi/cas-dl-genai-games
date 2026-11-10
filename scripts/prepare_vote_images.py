@@ -47,7 +47,7 @@ QUALITY = 92
 # detail of the real photos while the AI images are upscaled <= ~1.7x. At 2400 px
 # the AI images are clearly blurrier than their real twins in 5 of 6 pairs (local
 # sharpness 0.1-0.5x), which turns "blurry = AI" into a shortcut; at 1600 px the
-# viewer runs out of pixels quickly. See REVIEW.md for the measurements.
+# viewer runs out of pixels quickly.
 ZOOM_EDGE = 2048
 ZOOM_QUALITY = 95
 # 4:4:4 = full colour resolution (PIL's default 4:2:0 halves it, which shows as

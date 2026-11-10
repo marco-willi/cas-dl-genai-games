@@ -44,7 +44,7 @@ Trade-offs to be aware of:
 - A **Replicate API token** with credit available
   ([replicate.com/account/api-tokens](https://replicate.com/account/api-tokens)).
 - The models students can pick are listed in `data/models.json`; make sure
-  they are still available on Replicate (see *Model catalog* in the README).
+  they are still available on Replicate (see *Model catalog* in DEVELOP.md).
 
 ---
 

@@ -14,6 +14,7 @@ callers then fall back to a plain `st.image`.
 from __future__ import annotations
 
 import functools
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,7 +52,14 @@ class ZoomGroup:
 
 
 def zoom_available() -> bool:
-    """Whether static file serving is enabled in the configuration."""
+    """Whether the zoom viewer may be used: static serving is enabled in the
+    configuration and `ENABLE_ZOOM` is not set to a false value.
+
+    `ENABLE_ZOOM=false` is the escape hatch for hosts where the server can reach
+    its own `/app/static/` but browsers cannot (proxies): plain `st.image` is used.
+    """
+    if os.environ.get("ENABLE_ZOOM", "true").strip().lower() in {"0", "false", "no"}:
+        return False
     return bool(st.get_option("server.enableStaticServing"))
 
 

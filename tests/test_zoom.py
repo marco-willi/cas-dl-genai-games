@@ -183,3 +183,11 @@ def test_normalise_without_zoom_writes_one_file(prep, tmp_path):
     src = _jpg(tmp_path / "src.jpg", (300, 200))
     prep.normalise(src, tmp_path / "only.jpg", None, long_edge=100)
     assert {f.name for f in tmp_path.glob("*.jpg")} == {"src.jpg", "only.jpg"}
+
+
+def test_zoom_can_be_disabled_by_env(monkeypatch):
+    monkeypatch.setattr(zoom.st, "get_option", lambda name: True)
+    monkeypatch.delenv("ENABLE_ZOOM", raising=False)
+    assert zoom.zoom_available() is True
+    monkeypatch.setenv("ENABLE_ZOOM", "false")
+    assert zoom.zoom_available() is False

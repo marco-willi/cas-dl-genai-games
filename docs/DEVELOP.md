@@ -19,6 +19,7 @@ Copy `.env.example` to `.env` and set values before running.
 | `ASSETS_DIR` | No | `assets` | Directory for target images and placeholder. |
 | `USE_STUB_GENERATION` | No | `false` | Set to `true` to skip Replicate and return a placeholder image. |
 | `GENERATION_BUDGET` | No | `3` | Number of generations each student gets per task. The bundled `.env.example` sets `30` to leave room for the model-comparison task's fan-out rounds. The instructor can override it live on the Admin page. |
+| `ENABLE_ZOOM` | No | `true` | Set to `false` to disable the zoom viewer on vote images and show plain images instead. Use it if the vote images appear as alt text (`Vote image img_01`) on a host where `/app/static/` is not reachable from the browser. |
 | `MODELS_PATH` | No | `data/models.json` | Path to the model catalog. |
 
 Paths inside `tasks.json` (target, input and vote images) are relative to the

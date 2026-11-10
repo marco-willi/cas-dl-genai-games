@@ -98,8 +98,8 @@ def _ensure_logged_in(settings: AppSettings) -> bool:
     with center:
         st.title(settings.app_title)
         st.markdown(
-            "Spot fakes, write prompts, edit images and compare models — a "
-            "hands-on day with generative AI for computer vision."
+            "Spot fakes, write prompts, edit images and compare models. "
+            "Hands-on with generative AI for computer vision."
         )
         with st.form("login", border=True):
             name = st.text_input(

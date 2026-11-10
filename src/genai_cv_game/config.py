@@ -30,7 +30,7 @@ def load_settings() -> AppSettings:
     `.env` loading happens in `app.py` (the entry point), not at import time.
     """
     raw: dict[str, object] = {
-        "app_title": os.getenv("APP_TITLE", "Generative AI CV Classroom Game"),
+        "app_title": os.getenv("APP_TITLE", "Generative AI Playground"),
         "replicate_api_token": os.getenv("REPLICATE_API_TOKEN") or None,
         "app_passcode": os.getenv("APP_PASSCODE", "changeme"),
         "instructor_passcode": os.getenv("INSTRUCTOR_PASSCODE", "changeme"),

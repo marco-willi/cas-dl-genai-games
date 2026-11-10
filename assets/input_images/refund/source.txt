@@ -1,0 +1,5 @@
+quittung.jpg: PLACEHOLDER (a drawn, fictional cafe receipt). Replace it with the real receipt photo
+  under the same name; the task picks it up on the next click.
+quittung_original.jpg: the earlier receipt photo (real restaurant, 526x633 px), kept as a backup and
+  git-ignored. Source: https://www.facebook.com/fabianmagic.de/posts/restaurantrechnung-betr%C3%A4gt-8880-wie-viel-trinkgeld-ist-angemessen-%EF%B8%8F/1326990802119002/
+mael-balland-*.jpg, sara-aurora-*.jpg: Unsplash photos (photographers' names are in the file names).

@@ -1,0 +1,21 @@
+# "Studio" — dark gallery look so the images pop. Good on a projector.
+[theme]
+base = "dark"
+primaryColor = "#A78BFA"
+backgroundColor = "#0E0E12"
+secondaryBackgroundColor = "#1A1A22"
+textColor = "#ECECF1"
+linkColor = "#C4B5FD"
+borderColor = "#2A2A35"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "8px"
+buttonRadius = "8px"
+font = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+chartCategoricalColors = ["#A78BFA", "#F472B6", "#38BDF8", "#4ADE80", "#FBBF24", "#FB7185"]
+
+[theme.sidebar]
+backgroundColor = "#09090C"
+secondaryBackgroundColor = "#15151C"
+borderColor = "#2A2A35"

@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-load_dotenv()
+# Upper bound for the per-task budget (env var and admin override alike).
+MAX_GENERATION_BUDGET = 100
 
 
 class AppSettings(BaseModel):
@@ -21,12 +21,16 @@ class AppSettings(BaseModel):
     generated_dir: Path
     assets_dir: Path
     use_stub_generation: bool
-    generation_budget: int = Field(default=3, ge=1, le=100)
+    generation_budget: int = Field(default=3, ge=1, le=MAX_GENERATION_BUDGET)
 
 
 def load_settings() -> AppSettings:
+    """Build settings from environment variables.
+
+    `.env` loading happens in `app.py` (the entry point), not at import time.
+    """
     raw: dict[str, object] = {
-        "app_title": os.getenv("APP_TITLE", "Generative AI CV Classroom Game"),
+        "app_title": os.getenv("APP_TITLE", "Generative AI Playground"),
         "replicate_api_token": os.getenv("REPLICATE_API_TOKEN") or None,
         "app_passcode": os.getenv("APP_PASSCODE", "changeme"),
         "instructor_passcode": os.getenv("INSTRUCTOR_PASSCODE", "changeme"),
